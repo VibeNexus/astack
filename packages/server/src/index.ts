@@ -58,3 +58,19 @@ export {
   type ManifestSubscription,
   type NormalizedSubscription
 } from "./manifest.js";
+
+// HTTP surface
+export { createApp, type AppInstance, type CreateAppOptions } from "./http/app.js";
+export type { ServiceContainer } from "./http/container.js";
+
+// Daemon management
+export {
+  startDaemon,
+  stopDaemon,
+  installSignalHandlers,
+  isPortInUse,
+  isProcessAlive,
+  readPidFile,
+  ensureDataDir,
+  type DaemonHandle
+} from "./daemon.js";
