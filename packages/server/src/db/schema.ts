@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS sync_logs (
   to_version      TEXT,
   status          TEXT NOT NULL CHECK (status IN ('success', 'conflict', 'error')),
   conflict_detail TEXT,
+  /* Content hash (sha256) of the working copy AFTER this sync completed.
+     Used by SyncService to distinguish "Behind" (local unchanged) from
+     "Conflict" (local diverged) on the next sync. */
+  content_hash    TEXT,
   synced_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
