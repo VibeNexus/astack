@@ -1,0 +1,46 @@
+# AI tooling directories (vendored skills — not part of this repo)
+.claude/
+.codebuddy
+.cursor/
+
+# Node
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Runtime / local state
+.astack/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# TypeScript / build artifacts
+*.tsbuildinfo
+
+# Turborepo / monorepo caches
+.turbo/
+.cache/
