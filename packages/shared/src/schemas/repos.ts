@@ -16,6 +16,7 @@ import {
   NonEmptyStringSchema,
   PaginationSchema,
   RepoKindSchema,
+  ScanConfigSchema,
   SkillRepoSchema,
   SkillSchema
 } from "./common.js";
@@ -32,7 +33,12 @@ export const RegisterRepoRequestSchema = z.object({
    * - "custom"      — default; two-way sync (pull + push)
    * - "open-source" — pull-only; push returns REPO_READONLY
    */
-  kind: RepoKindSchema.default("custom")
+  kind: RepoKindSchema.default("custom"),
+  /**
+   * Override scan layout. Null / omitted = use `DEFAULT_SCAN_CONFIG`
+   * (skills/<n>/SKILL.md + commands/*.md). Added in v0.2.
+   */
+  scan_config: ScanConfigSchema.nullish()
 });
 export type RegisterRepoRequest = z.infer<typeof RegisterRepoRequestSchema>;
 

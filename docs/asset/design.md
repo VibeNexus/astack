@@ -780,22 +780,59 @@ astack/
 
 所有请求/响应用 zod schema 定义在 `packages/shared/schemas/`。错误码在 `packages/shared/errors.ts` 里统一枚举（`REPO_BUSY`、`CONFLICT_DETECTED`、`SUBSCRIPTION_NAME_COLLISION` 等）。
 
-#### 9. 技能仓库结构标准：镜像 `.claude/`
+#### 9. 技能仓库结构标准：默认镜像 `.claude/`，支持显式 layout 覆盖
+
+**默认结构（`DEFAULT_SCAN_CONFIG`）：**
 
 ```
 <skill-repo>/
 ├── commands/              ← 扫描规则：*.md 文件 = command 技能
 │   ├── code_review.md
 │   └── spec.md
-├── skills/                ← 扫描规则：子目录 = skill 技能（必须含 SKILL.md）
+├── skills/                ← 扫描规则：子目录（含 SKILL.md）= skill 技能
 │   └── office-hours/
 │       └── SKILL.md
 └── astack.yaml            ← 可选，元数据清单
 ```
 
-**扫描规则：**
-- `commands/*.md` → 每个 md 文件是一个 command 技能，文件名去 `.md` 后缀为技能名
-- `skills/<name>/` → 每个子目录是一个 skill 技能，要求包含 `SKILL.md`
+**扫描抽象（v0.2 起）：** 每个 `skill_repo` 持有一个可选的 `scan_config: ScanConfig | null`，为 null 时退化为默认结构。`ScanConfig` 形如：
+
+```ts
+{
+  roots: Array<{
+    path: string,                     // 相对 repo 根，"" 表示 repo 根本身
+    kind: 'skill-dirs'                // 子目录含 SKILL.md → type='skill'
+        | 'command-files'             // *.md → type='command'
+        | 'agent-files'               // *.md → type='agent'
+  }>
+}
+```
+
+**标准布局预设（任何仓库注册时如果省略 scan_config 都走这个）：**
+```ts
+DEFAULT_SCAN_CONFIG = {
+  roots: [
+    { path: 'skills',   kind: 'skill-dirs' },
+    { path: 'commands', kind: 'command-files' }
+  ]
+}
+```
+
+**另外支持的布局：**
+
+- **Flat（扁平）**：`[{ path: '', kind: 'skill-dirs' }]` —— 每个根目录下的子目录（含 SKILL.md）就是一个 skill。用于 `garrytan/gstack` 这类仓库。
+- **Multi-root（多根）**：`[{skills,skill-dirs}, {commands,command-files}, {agents,agent-files}]` —— 用于 `affaan-m/everything-claude-code` 这类含 `agents/` 的仓库。
+
+**白名单原则：** 一个目录被识别为 skill 当且仅当含 `SKILL.md`。这让 `bin/`、`lib/`、`docs/`、`test/` 等非技能目录被自动过滤，无需维护黑名单。
+
+**非递归：** flat 扫描只看根目录第一层，不深入。避免符号链接环和误扫 `test/` 下的 fixture。
+
+**Frontmatter：** 每个 SKILL.md / command.md 的 YAML frontmatter 里 `name` 和 `description` 会被读取。目录/文件名为权威（冲突时目录名胜出，但产出 warning）。描述存入 `skills.description` 字段供 Dashboard 展示。
+
+**扫描规则（概要）：**
+- `skill-dirs` 根：子目录 + 含 SKILL.md = 一个 type='skill' 技能，目录名为技能名
+- `command-files` 根：`*.md` = 一个 type='command' 技能，文件名去 `.md` 为技能名
+- `agent-files` 根：`*.md` = 一个 type='agent' 技能，文件名去 `.md` 为技能名
 - 可选的仓库根 `astack.yaml` 提供元数据（作者、描述、版本约束、依赖）
 
 **可选清单 `astack.yaml` 示例：**

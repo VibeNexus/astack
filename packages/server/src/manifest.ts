@@ -33,7 +33,7 @@ import { z } from "zod";
 
 const ManifestSubscriptionSchema = z.object({
   repo: z.string().min(1),
-  type: z.enum([SkillType.Command, SkillType.Skill]),
+  type: z.enum([SkillType.Command, SkillType.Skill, SkillType.Agent]),
   name: z.string().min(1)
 });
 

@@ -88,15 +88,17 @@ program
 program
   .command("subscribe <skills...>")
   .description("subscribe to one or more meta-skills")
-  .option("--type <type>", "disambiguate 'command' vs 'skill' when both exist")
+  .option("--type <type>", "disambiguate 'command' / 'skill' / 'agent' when names collide")
   .option("--no-sync", "skip initial sync")
   .option("--pin <hash>", "pin to a specific commit hash (single skill only)")
   .action((skills: string[], opts) =>
     wrap(() =>
       runSubscribe(skills, {
         type:
-          opts.type === SkillType.Command || opts.type === SkillType.Skill
-            ? (opts.type as typeof SkillType.Command | typeof SkillType.Skill)
+          opts.type === SkillType.Command ||
+          opts.type === SkillType.Skill ||
+          opts.type === SkillType.Agent
+            ? (opts.type as SkillType)
             : undefined,
         noSync: opts.sync === false,
         pin: opts.pin

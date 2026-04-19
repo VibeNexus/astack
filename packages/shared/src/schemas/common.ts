@@ -6,7 +6,9 @@ import { z } from "zod";
 
 import {
   RepoKind,
+  RepoStatus,
   ResolveStrategy,
+  ScanRootKind,
   SkillType,
   SubscriptionState,
   SyncDirection,
@@ -35,8 +37,29 @@ export const NonEmptyStringSchema = z.string().trim().min(1);
 
 // ---------- Enums ----------
 
-export const SkillTypeSchema = z.enum([SkillType.Command, SkillType.Skill]);
+export const SkillTypeSchema = z.enum([
+  SkillType.Command,
+  SkillType.Skill,
+  SkillType.Agent
+]);
 export const RepoKindSchema = z.enum([RepoKind.Custom, RepoKind.OpenSource]);
+export const RepoStatusSchema = z.enum([
+  RepoStatus.Ready,
+  RepoStatus.Seeding,
+  RepoStatus.Failed
+]);
+export const ScanRootKindSchema = z.enum([
+  ScanRootKind.SkillDirs,
+  ScanRootKind.CommandFiles,
+  ScanRootKind.AgentFiles
+]);
+export const ScanRootSchema = z.object({
+  path: z.string(),
+  kind: ScanRootKindSchema
+});
+export const ScanConfigSchema = z.object({
+  roots: z.array(ScanRootSchema).min(1)
+});
 export const SyncDirectionSchema = z.enum([SyncDirection.Pull, SyncDirection.Push]);
 export const SyncStatusSchema = z.enum([
   SyncStatus.Success,
@@ -103,6 +126,8 @@ export const SkillRepoSchema = z.object({
   name: NonEmptyStringSchema,
   git_url: NonEmptyStringSchema,
   kind: RepoKindSchema,
+  status: RepoStatusSchema,
+  scan_config: ScanConfigSchema.nullable(),
   local_path: z.string().nullable(),
   head_hash: CommitHashSchema.nullable(),
   last_synced: IsoDateTimeSchema.nullable(),
@@ -123,6 +148,7 @@ export const SkillSchema = z.object({
   type: SkillTypeSchema,
   name: NonEmptyStringSchema,
   path: NonEmptyStringSchema,
+  description: z.string().nullable(),
   version: CommitHashSchema.nullable(),
   updated_at: IsoDateTimeSchema.nullable()
 });

@@ -158,6 +158,7 @@ describe("AstackEventSchema (SSE discriminated union)", () => {
           type: SkillType.Command,
           name: "code_review",
           path: "commands/code_review.md",
+          description: null,
           version: "abc1234",
           updated_at: "2026-04-19T14:00:00.000Z"
         },

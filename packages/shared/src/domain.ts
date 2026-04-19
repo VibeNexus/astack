@@ -26,12 +26,39 @@ export type CommitHash = string;
 
 // ---------- Enums ----------
 
-/** A skill can be a single-file "command" or a directory "skill". */
+/**
+ * Skill packaging kind.
+ *
+ *   - "command" — single `.md` file (e.g. `commands/code_review.md`).
+ *   - "skill"   — directory containing a `SKILL.md` manifest plus supporting
+ *                 files. Only kind that is treated as a dir during sync.
+ *   - "agent"   — single `.md` file, typically under an `agents/` root.
+ *                 Semantically an autonomous subagent (not a slash command),
+ *                 but at the filesystem/sync layer indistinguishable from
+ *                 a command. Added in v0.2 to support upstream repos like
+ *                 `affaan-m/everything-claude-code` that publish agent defs.
+ *
+ * For sync/hash/copy operations use `isSkillDir(type)` to branch on
+ * "directory vs single-file", not direct equality checks — see helper below.
+ */
 export const SkillType = {
   Command: "command",
-  Skill: "skill"
+  Skill: "skill",
+  Agent: "agent"
 } as const;
 export type SkillType = (typeof SkillType)[keyof typeof SkillType];
+
+/**
+ * True when the skill type materializes as a directory on disk (currently
+ * only `"skill"`). Use this instead of `type === SkillType.Skill` when the
+ * intent is "does this need dir-level ops (mirrorDir, hashDir)?".
+ *
+ * Exists so future single-file types (like `agent`) don't silently drop into
+ * the wrong branch of an `if/else` that assumed two values.
+ */
+export function isSkillDir(type: SkillType): boolean {
+  return type === SkillType.Skill;
+}
 
 /** Direction of a sync operation. */
 export const SyncDirection = {
@@ -95,6 +122,72 @@ export type SubscriptionState = (typeof SubscriptionState)[keyof typeof Subscrip
 
 // ---------- Entities ----------
 
+/**
+ * Lifecycle status of a skill repo.
+ *
+ *   - "ready"   — clone present, scan current, available for subscription.
+ *   - "seeding" — placeholder row; clone in progress (async SeedService).
+ *                 Skills/listSkills will return empty until it flips to ready.
+ *   - "failed"  — clone or scan failed; kept so user sees it in the dashboard
+ *                 and SeedService retries on next start (for builtin seeds).
+ *
+ * Added in schema v2.
+ */
+export const RepoStatus = {
+  Ready: "ready",
+  Seeding: "seeding",
+  Failed: "failed"
+} as const;
+export type RepoStatus = (typeof RepoStatus)[keyof typeof RepoStatus];
+
+/**
+ * How the scanner walks a repo's filesystem.
+ *
+ * Single unified abstraction replacing the initially-proposed
+ * `standard | flat | multi-root` enum (see v0.2 Spec § OV-T2). The enum was
+ * a fit to three example repos; this shape models the actual variables:
+ *   (a) which root paths to scan
+ *   (b) how to identify skills inside each root
+ *
+ * `DEFAULT_SCAN_CONFIG` (in `@astack/shared` const export) reproduces the
+ * pre-v0.2 behavior: `skills/<n>/SKILL.md` + `commands/*.md`.
+ *
+ * `path === ""` means the repo root itself (for flat-layout repos like
+ * `garrytan/gstack` where each top-level dir with SKILL.md is a skill).
+ */
+export interface ScanConfig {
+  roots: ScanRoot[];
+}
+
+export interface ScanRoot {
+  /** Relative to repo root. Use "" for the repo root itself. */
+  path: string;
+  /**
+   * How to interpret entries under `path`:
+   *   - "skill-dirs"     subdirectories containing SKILL.md → type='skill'
+   *   - "command-files"  `*.md` files (flat) → type='command'
+   *   - "agent-files"    `*.md` files (flat) → type='agent'
+   */
+  kind: ScanRootKind;
+}
+
+export const ScanRootKind = {
+  SkillDirs: "skill-dirs",
+  CommandFiles: "command-files",
+  AgentFiles: "agent-files"
+} as const;
+export type ScanRootKind = (typeof ScanRootKind)[keyof typeof ScanRootKind];
+
+/**
+ * Pre-v0.2 default layout. Used when `SkillRepo.scan_config` is null.
+ */
+export const DEFAULT_SCAN_CONFIG: ScanConfig = {
+  roots: [
+    { path: "skills", kind: ScanRootKind.SkillDirs },
+    { path: "commands", kind: ScanRootKind.CommandFiles }
+  ]
+};
+
 /** A registered skill git repository (the "upstream mirror" source). */
 export interface SkillRepo {
   id: Id;
@@ -108,6 +201,14 @@ export interface SkillRepo {
    *  - "open-source" pull only; push returns REPO_READONLY
    */
   kind: RepoKind;
+  /** Lifecycle status. Added in schema v2. */
+  status: RepoStatus;
+  /**
+   * How the scanner should walk this repo. `null` means use
+   * `DEFAULT_SCAN_CONFIG`. Stored as JSON in the DB.
+   * Added in schema v2.
+   */
+  scan_config: ScanConfig | null;
   /** Local clone path (~/.astack/repos/<name>/). [CACHE] */
   local_path: string | null;
   /** Current HEAD commit hash of the local clone. [CACHE] */
@@ -137,6 +238,12 @@ export interface Skill {
   name: string;
   /** Path relative to repo root, e.g. "commands/code_review.md". */
   path: string;
+  /**
+   * Human-readable description, read from SKILL.md YAML frontmatter on
+   * scan. `null` when the file has no frontmatter, invalid YAML, or no
+   * `description` field. Added in schema v2.
+   */
+  description: string | null;
   /** Git commit hash that last touched this skill. */
   version: CommitHash | null;
   /** Git commit time of `version`. */

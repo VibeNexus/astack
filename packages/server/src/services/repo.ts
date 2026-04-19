@@ -19,10 +19,12 @@ import path from "node:path";
 
 import {
   AstackError,
+  DEFAULT_SCAN_CONFIG,
   ErrorCode,
   EventType,
   RepoKind,
   SkillType,
+  type ScanConfig,
   type Skill,
   type SkillRepo
 } from "@astack/shared";
@@ -40,7 +42,7 @@ import {
 } from "../git.js";
 import type { LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
-import { scanRepo } from "../scanner.js";
+import { scanRepo } from "../scanner/index.js";
 
 export interface RepoServiceDeps {
   db: Db;
@@ -117,9 +119,17 @@ export class RepoService {
     name?: string;
     /** Defaults to "custom" (two-way sync) if omitted. */
     kind?: RepoKind;
+    /**
+     * Scanner layout override. Omitted / null = use `DEFAULT_SCAN_CONFIG`
+     * (skills/<n>/SKILL.md + commands/*.md). Added in v0.2 to support
+     * upstream repos with different filesystem conventions (e.g. gstack
+     * uses a flat layout, everything-claude-code has an `agents/` root).
+     */
+    scan_config?: ScanConfig | null;
   }): Promise<RegisterRepoOutput> {
     const gitUrl = input.git_url.trim();
     const kind: RepoKind = input.kind ?? RepoKind.Custom;
+    const scanConfig = input.scan_config ?? null;
 
     if (this.repos.findByGitUrl(gitUrl)) {
       throw new AstackError(
@@ -164,18 +174,31 @@ export class RepoService {
       name,
       git_url: gitUrl,
       kind,
-      local_path: localPath
+      local_path: localPath,
+      scan_config: scanConfig
     });
     this.repos.updateSyncState(repoRow.id, {
       head_hash: head.head,
       last_synced: new Date().toISOString()
     });
 
-    // Scan + upsert skills.
-    const skills = this.scanAndUpsert(repoRow.id, localPath, head.head, head.head_time);
+    // Scan + upsert skills using the configured layout.
+    const skills = this.scanAndUpsert(
+      repoRow.id,
+      localPath,
+      head.head,
+      head.head_time,
+      scanConfig
+    );
 
     const finalRepo = this.repos.findById(repoRow.id);
     if (!finalRepo) throw new Error("repo row disappeared after insert");
+    // PR1: scan_config is not yet persisted in the DB (PR2 adds the
+    // column). Preserve what the caller requested so downstream observers
+    // (SSE, register response) see a consistent shape.
+    if (scanConfig !== null) {
+      finalRepo.scan_config = scanConfig;
+    }
 
     this.deps.events.emit({
       type: EventType.RepoRegistered,
@@ -185,6 +208,10 @@ export class RepoService {
     return {
       repo: finalRepo,
       skills,
+      // NOTE: `agent` type skills are included in `skills[]` but not in
+      // these counts to preserve the pre-v0.2 response shape. Consumers
+      // that care about agents should iterate `skills`. Future API can add
+      // a `total_count` or `agent_count` field.
       command_count: skills.filter((s) => s.type === SkillType.Command).length,
       skill_count: skills.filter((s) => s.type === SkillType.Skill).length
     };
@@ -226,7 +253,8 @@ export class RepoService {
         repoId,
         repo.local_path,
         head.head,
-        head.head_time
+        head.head_time,
+        repo.scan_config
       );
 
       const updated = this.repos.findById(repoId);
@@ -321,14 +349,18 @@ export class RepoService {
   /**
    * Scan the local clone and reconcile `skills` table rows for this repo.
    * Returns the current skill rows.
+   *
+   * @param scanConfig  Layout override. null = use `DEFAULT_SCAN_CONFIG`.
    */
   private scanAndUpsert(
     repoId: number,
     localPath: string,
     headHash: string,
-    headTime: string
+    headTime: string,
+    scanConfig: ScanConfig | null
   ): Skill[] {
-    const { skills, warnings } = scanRepo(localPath);
+    const config = scanConfig ?? DEFAULT_SCAN_CONFIG;
+    const { skills, warnings } = scanRepo(localPath, config);
 
     for (const w of warnings) {
       this.deps.logger.warn("scan.warning", { repo_id: repoId, detail: w });
@@ -342,6 +374,7 @@ export class RepoService {
           type: s.type,
           name: s.name,
           path: s.relPath,
+          description: s.description,
           version: headHash,
           updated_at: headTime
         })
