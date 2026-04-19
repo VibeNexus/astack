@@ -24,6 +24,11 @@ CREATE TABLE IF NOT EXISTS skill_repos (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   name        TEXT NOT NULL UNIQUE,
   git_url     TEXT NOT NULL UNIQUE,
+  /* Ownership model: 'custom' (two-way sync) or 'open-source' (pull-only).
+     See @astack/shared RepoKind. Defaults to 'custom' for backward
+     compatibility when older CLI clients omit the field. */
+  kind        TEXT NOT NULL DEFAULT 'custom'
+              CHECK (kind IN ('custom', 'open-source')),
   local_path  TEXT,
   head_hash   TEXT,
   last_synced TEXT,

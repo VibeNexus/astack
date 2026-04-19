@@ -5,6 +5,7 @@
 import { z } from "zod";
 
 import {
+  RepoKind,
   ResolveStrategy,
   SkillType,
   SubscriptionState,
@@ -35,6 +36,7 @@ export const NonEmptyStringSchema = z.string().trim().min(1);
 // ---------- Enums ----------
 
 export const SkillTypeSchema = z.enum([SkillType.Command, SkillType.Skill]);
+export const RepoKindSchema = z.enum([RepoKind.Custom, RepoKind.OpenSource]);
 export const SyncDirectionSchema = z.enum([SyncDirection.Pull, SyncDirection.Push]);
 export const SyncStatusSchema = z.enum([
   SyncStatus.Success,
@@ -100,6 +102,7 @@ export const SkillRepoSchema = z.object({
   id: IdSchema,
   name: NonEmptyStringSchema,
   git_url: NonEmptyStringSchema,
+  kind: RepoKindSchema,
   local_path: z.string().nullable(),
   head_hash: CommitHashSchema.nullable(),
   last_synced: IsoDateTimeSchema.nullable(),

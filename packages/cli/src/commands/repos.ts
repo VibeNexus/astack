@@ -3,6 +3,7 @@
  * managing skill repos from the CLI. Dashboard does the same via Web.
  */
 
+import type { RepoKind } from "@astack/shared";
 import kleur from "kleur";
 
 import { AstackClient } from "../client.js";
@@ -12,19 +13,28 @@ import { printInfo, printOk, printTable, printWarn } from "../output.js";
 
 export async function runReposRegister(
   gitUrl: string,
-  opts: { name?: string; daemonUrl?: string } = {}
+  opts: {
+    name?: string;
+    /** True → register as open-source (pull-only). Default custom. */
+    readonly?: boolean;
+    daemonUrl?: string;
+  } = {}
 ): Promise<void> {
   const client = new AstackClient({
     baseUrl: opts.daemonUrl ?? DEFAULT_DAEMON_URL
   });
   await ensureDaemonOnline(client);
 
+  const kind: RepoKind = opts.readonly ? "open-source" : "custom";
   const { repo, command_count, skill_count } = await client.registerRepo({
     git_url: gitUrl,
-    name: opts.name
+    name: opts.name,
+    kind
   });
+  const kindLabel =
+    repo.kind === "open-source" ? kleur.yellow("[open-source, pull-only]") : "";
   printOk(
-    `registered repo '${repo.name}' (${command_count} command(s), ${skill_count} skill(s))`
+    `registered repo '${repo.name}' ${kindLabel} (${command_count} command(s), ${skill_count} skill(s))`.trim()
   );
 }
 
@@ -43,12 +53,21 @@ export async function runReposList(
   }
   printInfo(`${total} repo(s) registered`);
   const rows: string[][] = [
-    [kleur.bold("id"), kleur.bold("name"), kleur.bold("head"), kleur.bold("url")]
+    [
+      kleur.bold("id"),
+      kleur.bold("name"),
+      kleur.bold("kind"),
+      kleur.bold("head"),
+      kleur.bold("url")
+    ]
   ];
   for (const r of repos) {
+    const kindCell =
+      r.kind === "open-source" ? kleur.yellow("read-only") : kleur.gray("custom");
     rows.push([
       String(r.id),
       r.name,
+      kindCell,
       kleur.gray(r.head_hash?.slice(0, 7) ?? "—"),
       kleur.gray(r.git_url)
     ]);

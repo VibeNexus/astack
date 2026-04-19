@@ -80,7 +80,12 @@ export function ProjectDetailPage(): React.JSX.Element {
       const r = await api.push(projectId);
       if (r.pushed > 0) toast.ok(`Pushed ${r.pushed} skill(s)`);
       else if (r.conflicts > 0) toast.warn(`${r.conflicts} conflict(s)`);
-      else toast.ok("Nothing to push");
+      else if (r.readonly_skipped > 0 && r.pushed === 0) {
+        toast.warn(
+          `${r.readonly_skipped} skipped`,
+          "All edited skills live in pull-only (open-source) repos."
+        );
+      } else toast.ok("Nothing to push");
       await load();
     } catch (err) {
       toast.error(
@@ -226,7 +231,17 @@ export function ProjectDetailPage(): React.JSX.Element {
                         ) : null}
                       </td>
                       <td className="px-3 py-2 text-text-secondary">
-                        {s.repo.name}
+                        <span className="inline-flex items-center gap-2">
+                          {s.repo.name}
+                          {s.repo.kind === "open-source" ? (
+                            <Badge
+                              tone="warn"
+                              title="Open-source repo — pull only"
+                            >
+                              read-only
+                            </Badge>
+                          ) : null}
+                        </span>
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-text-muted">
                         {shortHash(s.skill.version)}

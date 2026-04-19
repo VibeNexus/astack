@@ -178,6 +178,28 @@ describe("CLI command functions", () => {
       expect(out).toContain("1 command(s)");
     });
 
+    it("register --readonly marks the repo as open-source", async () => {
+      const { out } = await captureStdout(() =>
+        runReposRegister(bare.bareDir, {
+          readonly: true,
+          daemonUrl: baseUrl
+        })
+      );
+      expect(out).toContain("registered repo");
+      expect(out).toContain("open-source");
+    });
+
+    it("list shows 'read-only' next to open-source repos", async () => {
+      await runReposRegister(bare.bareDir, {
+        readonly: true,
+        daemonUrl: baseUrl
+      });
+      const { out } = await captureStdout(() =>
+        runReposList({ daemonUrl: baseUrl })
+      );
+      expect(out).toContain("read-only");
+    });
+
     it("list shows registered repos; empty message before register", async () => {
       const empty = await captureStdout(() => runReposList({ daemonUrl: baseUrl }));
       expect(empty.out).toContain("no repos");
@@ -395,6 +417,25 @@ describe("CLI command functions", () => {
       await expect(runPush(["no-such-skill"], {})).rejects.toMatchObject({
         code: "SKILL_NOT_FOUND"
       });
+    });
+
+    it("warns about skipped open-source repos", async () => {
+      // Register the repo as read-only, then bootstrap uses it.
+      await runReposRegister(bare.bareDir, {
+        readonly: true,
+        daemonUrl: baseUrl
+      });
+      await runInit({ daemonUrl: baseUrl });
+      await runSubscribe(["code_review"], {});
+
+      // Edit the working copy.
+      fs.writeFileSync(
+        path.join(projectDir.path, ".claude/commands/code_review.md"),
+        "# local\n"
+      );
+
+      const { out } = await captureStdout(() => runPush([], {}));
+      expect(out).toContain("open-source repo, pull-only");
     });
   });
 

@@ -42,6 +42,8 @@ export const ErrorCode = {
   REPO_BUSY: "REPO_BUSY",
   /** Repo contents do not match the expected structure (commands/, skills/). */
   REPO_STRUCTURE_INVALID: "REPO_STRUCTURE_INVALID",
+  /** Attempt to push to an open-source (readonly) repo. */
+  REPO_READONLY: "REPO_READONLY",
 
   // ---- skills ----
   SKILL_NOT_FOUND: "SKILL_NOT_FOUND",
@@ -153,6 +155,7 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   REPO_GIT_FAILED: 502,
   REPO_BUSY: 423,
   REPO_STRUCTURE_INVALID: 422,
+  REPO_READONLY: 403,
 
   SKILL_NOT_FOUND: 404,
   SKILL_REF_AMBIGUOUS: 409,

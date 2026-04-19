@@ -3,7 +3,7 @@ import type * as React from "react";
  * Repos page — list + register + remove + refresh skill repositories.
  */
 
-import type { SkillRepo } from "@astack/shared";
+import type { RepoKind, SkillRepo } from "@astack/shared";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
@@ -117,6 +117,15 @@ export function ReposPage(): React.JSX.Element {
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{r.name}</span>
                   <Badge tone="neutral">id {r.id}</Badge>
+                  {r.kind === "open-source" ? (
+                    <Badge tone="warn" title="Pull-only; push will be rejected">
+                      read-only
+                    </Badge>
+                  ) : (
+                    <Badge tone="accent" title="Two-way sync (pull + push)">
+                      custom
+                    </Badge>
+                  )}
                 </div>
                 <div className="text-xs text-text-muted font-mono truncate mt-0.5">
                   {r.git_url}
@@ -169,6 +178,7 @@ function RegisterRepoDialog({
 }): React.JSX.Element {
   const [gitUrl, setGitUrl] = useState("");
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<RepoKind>("custom");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
@@ -178,7 +188,8 @@ function RegisterRepoDialog({
     try {
       const res = await api.registerRepo({
         git_url: gitUrl.trim(),
-        name: name.trim() || undefined
+        name: name.trim() || undefined,
+        kind
       });
       toast.ok(
         `Registered ${res.repo.name}`,
@@ -204,8 +215,9 @@ function RegisterRepoDialog({
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-[440px] max-w-[90vw] bg-elevated border border-border rounded p-4 space-y-3">
+      <div className="w-[520px] max-w-[90vw] bg-elevated border border-border rounded p-4 space-y-3">
         <div className="text-lg font-semibold text-text-primary">Register skill repo</div>
+
         <label className="block text-sm">
           <div className="text-text-secondary mb-1">Git URL</div>
           <input
@@ -217,6 +229,29 @@ function RegisterRepoDialog({
             autoFocus
           />
         </label>
+
+        <div className="block text-sm">
+          <div className="text-text-secondary mb-1.5">Repo type</div>
+          <div className="grid grid-cols-2 gap-2">
+            <KindOption
+              selected={kind === "custom"}
+              onClick={() => !busy && setKind("custom")}
+              title="Custom"
+              tag="two-way"
+              tagTone="accent"
+              description="Your own repo. Pull from remote and push local edits back."
+            />
+            <KindOption
+              selected={kind === "open-source"}
+              onClick={() => !busy && setKind("open-source")}
+              title="Open-source"
+              tag="pull-only"
+              tagTone="warn"
+              description="Third-party repo. Pull only; local edits cannot be pushed upstream."
+            />
+          </div>
+        </div>
+
         <label className="block text-sm">
           <div className="text-text-secondary mb-1">
             Name <span className="text-text-muted">(optional)</span>
@@ -229,6 +264,7 @@ function RegisterRepoDialog({
             disabled={busy}
           />
         </label>
+
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
@@ -239,5 +275,42 @@ function RegisterRepoDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+function KindOption({
+  selected,
+  onClick,
+  title,
+  tag,
+  tagTone,
+  description
+}: {
+  selected: boolean;
+  onClick: () => void;
+  title: string;
+  tag: string;
+  tagTone: "accent" | "warn";
+  description: string;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={`text-left p-3 rounded border transition-colors ${
+        selected
+          ? "border-accent bg-accent-muted/20"
+          : "border-border bg-surface hover:bg-elevated"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-text-primary">{title}</span>
+        <Badge tone={tagTone}>{tag}</Badge>
+      </div>
+      <div className="text-xs text-text-secondary mt-1.5 leading-snug">
+        {description}
+      </div>
+    </button>
   );
 }

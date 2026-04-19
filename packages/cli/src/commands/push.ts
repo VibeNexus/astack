@@ -49,6 +49,11 @@ export async function runPush(
 
   if (result.pushed > 0) printOk(`pushed ${result.pushed} skill(s)`);
   if (result.no_changes > 0) printWarn(`${result.no_changes} had no local changes`);
+  if (result.readonly_skipped > 0) {
+    printWarn(
+      `${result.readonly_skipped} skipped (open-source repo, pull-only)`
+    );
+  }
   if (result.conflicts > 0) {
     printWarn(`${result.conflicts} conflict(s) — run 'astack status' to see details`);
     for (const o of result.outcomes) {

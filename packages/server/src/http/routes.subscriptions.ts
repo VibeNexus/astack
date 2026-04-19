@@ -134,6 +134,7 @@ export function subscriptionsRoutes(c: ServiceContainer): Hono {
       let pushed = 0;
       let no_changes = 0;
       let conflicts = 0;
+      let readonly_skipped = 0;
       let errors = 0;
 
       for (const skillId of skillIds) {
@@ -202,6 +203,16 @@ export function subscriptionsRoutes(c: ServiceContainer): Hono {
             }
             continue;
           }
+          if (
+            err instanceof AstackError &&
+            err.code === ErrorCode.REPO_READONLY
+          ) {
+            // Push was attempted on an open-source (pull-only) repo.
+            // Skip silently in batch mode — CLI surfaces a warning based
+            // on the readonly_skipped count.
+            readonly_skipped++;
+            continue;
+          }
           errors++;
           c.logger.warn("push.skill_failed", {
             project_id: id,
@@ -222,6 +233,7 @@ export function subscriptionsRoutes(c: ServiceContainer): Hono {
         pushed,
         no_changes,
         conflicts,
+        readonly_skipped,
         errors
       };
       return ctx.json(response);

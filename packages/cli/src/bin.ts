@@ -200,10 +200,19 @@ reposCmd
   .command("register <git_url>")
   .description("register a new skill repo")
   .option("-n, --name <name>", "override repo name")
+  .option(
+    "--readonly",
+    "register as an open-source repo (pull-only, no push)",
+    false
+  )
   .option("--daemon-url <url>", "override daemon URL")
   .action((url: string, opts) =>
     wrap(() =>
-      runReposRegister(url, { name: opts.name, daemonUrl: opts.daemonUrl })
+      runReposRegister(url, {
+        name: opts.name,
+        readonly: opts.readonly === true,
+        daemonUrl: opts.daemonUrl
+      })
     )
   );
 reposCmd

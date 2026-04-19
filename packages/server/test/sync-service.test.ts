@@ -430,4 +430,106 @@ describe("SyncService", () => {
       expect(subscriptions[0].state).toBe(SubscriptionState.LocalAhead);
     });
   });
+
+  // ---------- open-source (read-only) repo gate ----------
+
+  describe("open-source repos (readonly)", () => {
+    async function seedReadonly(): Promise<{
+      projectId: number;
+      skillId: number;
+      projectPath: string;
+    }> {
+      await h.bare.addCommitPush("commands/code_review.md", "v1\n", "init");
+      const { repo } = await h.repoService.register({
+        git_url: h.bare.url,
+        kind: "open-source"
+      });
+      const project = h.projectService.register({ path: h.projectDir.path });
+      const skill = h.repoService
+        .listSkills(repo.id)
+        .find((s) => s.name === "code_review")!;
+      h.subscriptionService.subscribe(project.id, "code_review");
+      return {
+        projectId: project.id,
+        skillId: skill.id,
+        projectPath: h.projectDir.path
+      };
+    }
+
+    it("pullOne still works on open-source repos", async () => {
+      const s = await seedReadonly();
+      const outcome = await h.syncService.pullOne(s.projectId, s.skillId);
+      expect(outcome.state).toBe(SubscriptionState.Synced);
+      expect(readWorking(s.projectPath, "commands/code_review.md")).toBe("v1\n");
+    });
+
+    it("pushOne rejects with REPO_READONLY before acquiring the lock", async () => {
+      const s = await seedReadonly();
+      await h.syncService.pullOne(s.projectId, s.skillId);
+      writeWorking(s.projectPath, "commands/code_review.md", "edited\n");
+
+      await expect(
+        h.syncService.pushOne(s.projectId, s.skillId)
+      ).rejects.toMatchObject({
+        code: ErrorCode.REPO_READONLY
+      });
+    });
+
+    it("resolve with use-remote works on open-source repos", async () => {
+      const s = await seedReadonly();
+      // Create a conflict: local edit + remote edit.
+      await h.syncService.pullOne(s.projectId, s.skillId);
+      writeWorking(s.projectPath, "commands/code_review.md", "local\n");
+      await h.bare.addCommitPush("commands/code_review.md", "remote\n", "remote edit");
+
+      await expect(
+        h.syncService.pullOne(s.projectId, s.skillId)
+      ).rejects.toMatchObject({ code: ErrorCode.CONFLICT_DETECTED });
+
+      // use-remote only reads upstream into working; it's allowed.
+      const { subscription } = await h.syncService.resolve(
+        s.projectId,
+        s.skillId,
+        ResolveStrategy.UseRemote
+      );
+      expect(subscription.state).toBe(SubscriptionState.Synced);
+      expect(readWorking(s.projectPath, "commands/code_review.md")).toBe("remote\n");
+    });
+
+    it("resolve with keep-local rejects with REPO_READONLY", async () => {
+      const s = await seedReadonly();
+      await h.syncService.pullOne(s.projectId, s.skillId);
+      writeWorking(s.projectPath, "commands/code_review.md", "local\n");
+      await h.bare.addCommitPush("commands/code_review.md", "remote\n", "remote edit");
+
+      await expect(
+        h.syncService.pullOne(s.projectId, s.skillId)
+      ).rejects.toMatchObject({ code: ErrorCode.CONFLICT_DETECTED });
+
+      await expect(
+        h.syncService.resolve(s.projectId, s.skillId, ResolveStrategy.KeepLocal)
+      ).rejects.toMatchObject({
+        code: ErrorCode.REPO_READONLY
+      });
+    });
+
+    it("resolve with manual rejects with REPO_READONLY", async () => {
+      const s = await seedReadonly();
+      await h.syncService.pullOne(s.projectId, s.skillId);
+      writeWorking(s.projectPath, "commands/code_review.md", "local\n");
+      await h.bare.addCommitPush("commands/code_review.md", "remote\n", "remote edit");
+
+      await expect(
+        h.syncService.pullOne(s.projectId, s.skillId)
+      ).rejects.toMatchObject({ code: ErrorCode.CONFLICT_DETECTED });
+
+      await expect(
+        h.syncService.resolve(s.projectId, s.skillId, ResolveStrategy.Manual, {
+          manual_done: true
+        })
+      ).rejects.toMatchObject({
+        code: ErrorCode.REPO_READONLY
+      });
+    });
+  });
 });

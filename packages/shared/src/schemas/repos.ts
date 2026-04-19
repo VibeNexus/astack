@@ -15,6 +15,7 @@ import {
   IdSchema,
   NonEmptyStringSchema,
   PaginationSchema,
+  RepoKindSchema,
   SkillRepoSchema,
   SkillSchema
 } from "./common.js";
@@ -25,7 +26,13 @@ export const RegisterRepoRequestSchema = z.object({
   /** Remote git URL, e.g. "git@github.com:alexjhwen/my-skills.git". */
   git_url: NonEmptyStringSchema,
   /** Optional override; default = last segment of git_url without .git. */
-  name: NonEmptyStringSchema.optional()
+  name: NonEmptyStringSchema.optional(),
+  /**
+   * Ownership model.
+   * - "custom"      — default; two-way sync (pull + push)
+   * - "open-source" — pull-only; push returns REPO_READONLY
+   */
+  kind: RepoKindSchema.default("custom")
 });
 export type RegisterRepoRequest = z.infer<typeof RegisterRepoRequestSchema>;
 

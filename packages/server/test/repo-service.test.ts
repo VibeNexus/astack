@@ -160,6 +160,25 @@ describe("RepoService", () => {
       expect(result.command_count).toBe(0);
       expect(result.skill_count).toBe(0);
     });
+
+    it("defaults repo kind to 'custom' when not specified", async () => {
+      await bare.addCommitPush("commands/x.md", "x", "init");
+      const result = await service.register({ git_url: bare.url });
+      expect(result.repo.kind).toBe("custom");
+    });
+
+    it("persists an explicit 'open-source' kind", async () => {
+      await bare.addCommitPush("commands/x.md", "x", "init");
+      const result = await service.register({
+        git_url: bare.url,
+        kind: "open-source"
+      });
+      expect(result.repo.kind).toBe("open-source");
+
+      // Round-trip: list and findById must also reflect the kind.
+      const listed = service.list({ offset: 0, limit: 10 });
+      expect(listed.repos[0]?.kind).toBe("open-source");
+    });
   });
 
   // ---------- refresh ----------

@@ -141,6 +141,8 @@ export const PushResponseSchema = z.object({
   pushed: z.number().int().nonnegative(),
   no_changes: z.number().int().nonnegative(),
   conflicts: z.number().int().nonnegative(),
+  /** Number of skills skipped because their repo is open-source. */
+  readonly_skipped: z.number().int().nonnegative().default(0),
   errors: z.number().int().nonnegative()
 });
 export type PushResponse = z.infer<typeof PushResponseSchema>;

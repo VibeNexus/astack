@@ -67,6 +67,7 @@ describe("AstackClient", () => {
             id: 1,
             name: "x",
             git_url: "g",
+            kind: "custom",
             local_path: null,
             head_hash: null,
             last_synced: null,

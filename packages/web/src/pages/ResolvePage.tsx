@@ -149,6 +149,11 @@ export function ResolvePage(): React.JSX.Element {
           description="Overwrite upstream with your working copy. Publishes your version."
           cta="Keep local & push"
           busy={busy}
+          disabledReason={
+            sub.repo.kind === "open-source"
+              ? "Disabled for open-source repos (push not allowed)."
+              : undefined
+          }
           onRun={() => runStrategy(ResolveStrategy.KeepLocal)}
         />
         <StrategyCard
@@ -161,6 +166,11 @@ export function ResolvePage(): React.JSX.Element {
         />
         <ManualCard
           busy={busy}
+          disabledReason={
+            sub.repo.kind === "open-source"
+              ? "Disabled for open-source repos (push not allowed)."
+              : undefined
+          }
           onRun={() => runStrategy(ResolveStrategy.Manual, true)}
         />
       </div>
@@ -190,6 +200,7 @@ function StrategyCard({
   cta,
   busy,
   destructive,
+  disabledReason,
   onRun
 }: {
   title: string;
@@ -197,18 +208,23 @@ function StrategyCard({
   cta: string;
   busy: boolean;
   destructive?: boolean;
+  disabledReason?: string;
   onRun: () => void;
 }): React.JSX.Element {
+  const blocked = Boolean(disabledReason);
   return (
     <Card className="flex flex-col gap-3">
       <div>
         <div className="text-lg font-medium">{title}</div>
         <div className="text-sm text-text-secondary mt-1">{description}</div>
+        {disabledReason ? (
+          <div className="text-xs text-warn mt-2">{disabledReason}</div>
+        ) : null}
       </div>
       <Button
         variant={destructive ? "outline" : "primary"}
         onClick={onRun}
-        disabled={busy}
+        disabled={busy || blocked}
         className={destructive ? "text-error hover:text-error" : ""}
       >
         {busy ? "Working…" : cta}
@@ -219,11 +235,14 @@ function StrategyCard({
 
 function ManualCard({
   busy,
+  disabledReason,
   onRun
 }: {
   busy: boolean;
+  disabledReason?: string;
   onRun: () => void;
 }): React.JSX.Element {
+  const blocked = Boolean(disabledReason);
   return (
     <Card className="flex flex-col gap-3">
       <div>
@@ -232,12 +251,11 @@ function ManualCard({
           Edit the file in your editor, remove any conflict markers, then
           click the button below. Astack verifies and pushes.
         </div>
+        {disabledReason ? (
+          <div className="text-xs text-warn mt-2">{disabledReason}</div>
+        ) : null}
       </div>
-      <Button
-        variant="outline"
-        onClick={onRun}
-        disabled={busy}
-      >
+      <Button variant="outline" onClick={onRun} disabled={busy || blocked}>
         {busy ? "Working…" : "I finished merging"}
       </Button>
     </Card>

@@ -5,12 +5,15 @@
  * rows matching the `SkillRepo` domain type.
  */
 
-import type { SkillRepo } from "@astack/shared";
+import type { RepoKind, SkillRepo } from "@astack/shared";
 
 import type { Db } from "./connection.js";
 
 /** Shape as stored in SQLite (matches SkillRepo exactly). */
 type SkillRepoRow = SkillRepo;
+
+const SELECT_COLS =
+  "id, name, git_url, kind, local_path, head_hash, last_synced, created_at";
 
 export class RepoRepository {
   constructor(private readonly db: Db) {}
@@ -18,19 +21,19 @@ export class RepoRepository {
   insert(input: {
     name: string;
     git_url: string;
+    kind: RepoKind;
     local_path: string | null;
   }): SkillRepo {
     const stmt = this.db.prepare<
-      [string, string, string | null],
+      [string, string, RepoKind, string | null],
       SkillRepoRow
     >(
-      `INSERT INTO skill_repos (name, git_url, local_path)
-       VALUES (?, ?, ?)
-       RETURNING id, name, git_url, local_path, head_hash, last_synced, created_at`
+      `INSERT INTO skill_repos (name, git_url, kind, local_path)
+       VALUES (?, ?, ?, ?)
+       RETURNING ${SELECT_COLS}`
     );
-    const row = stmt.get(input.name, input.git_url, input.local_path);
+    const row = stmt.get(input.name, input.git_url, input.kind, input.local_path);
     if (!row) {
-      // RETURNING should always produce a row on successful insert.
       throw new Error("insert skill_repos returned no row");
     }
     return row;
@@ -39,8 +42,7 @@ export class RepoRepository {
   findById(id: number): SkillRepo | null {
     const row = this.db
       .prepare<[number], SkillRepoRow>(
-        `SELECT id, name, git_url, local_path, head_hash, last_synced, created_at
-         FROM skill_repos WHERE id = ?`
+        `SELECT ${SELECT_COLS} FROM skill_repos WHERE id = ?`
       )
       .get(id);
     return row ?? null;
@@ -49,8 +51,7 @@ export class RepoRepository {
   findByName(name: string): SkillRepo | null {
     const row = this.db
       .prepare<[string], SkillRepoRow>(
-        `SELECT id, name, git_url, local_path, head_hash, last_synced, created_at
-         FROM skill_repos WHERE name = ?`
+        `SELECT ${SELECT_COLS} FROM skill_repos WHERE name = ?`
       )
       .get(name);
     return row ?? null;
@@ -59,8 +60,7 @@ export class RepoRepository {
   findByGitUrl(url: string): SkillRepo | null {
     const row = this.db
       .prepare<[string], SkillRepoRow>(
-        `SELECT id, name, git_url, local_path, head_hash, last_synced, created_at
-         FROM skill_repos WHERE git_url = ?`
+        `SELECT ${SELECT_COLS} FROM skill_repos WHERE git_url = ?`
       )
       .get(url);
     return row ?? null;
@@ -71,8 +71,7 @@ export class RepoRepository {
   ): { rows: SkillRepo[]; total: number } {
     const rows = this.db
       .prepare<[number, number], SkillRepoRow>(
-        `SELECT id, name, git_url, local_path, head_hash, last_synced, created_at
-         FROM skill_repos ORDER BY id LIMIT ? OFFSET ?`
+        `SELECT ${SELECT_COLS} FROM skill_repos ORDER BY id LIMIT ? OFFSET ?`
       )
       .all(opts.limit, opts.offset);
     const total = (

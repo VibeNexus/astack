@@ -21,6 +21,7 @@ import {
   AstackError,
   ErrorCode,
   EventType,
+  RepoKind,
   SkillType,
   type Skill,
   type SkillRepo
@@ -114,8 +115,11 @@ export class RepoService {
   async register(input: {
     git_url: string;
     name?: string;
+    /** Defaults to "custom" (two-way sync) if omitted. */
+    kind?: RepoKind;
   }): Promise<RegisterRepoOutput> {
     const gitUrl = input.git_url.trim();
+    const kind: RepoKind = input.kind ?? RepoKind.Custom;
 
     if (this.repos.findByGitUrl(gitUrl)) {
       throw new AstackError(
@@ -159,6 +163,7 @@ export class RepoService {
     const repoRow = this.repos.insert({
       name,
       git_url: gitUrl,
+      kind,
       local_path: localPath
     });
     this.repos.updateSyncState(repoRow.id, {

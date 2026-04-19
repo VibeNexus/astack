@@ -408,6 +408,15 @@ export class SyncService {
     const skill = this.mustFindSkill(skillId);
     const repo = this.mustFindRepo(skill.repo_id);
 
+    // Open-source repos are pull-only; reject before acquiring the lock.
+    if (repo.kind === "open-source") {
+      throw new AstackError(
+        ErrorCode.REPO_READONLY,
+        `cannot push to open-source repo '${repo.name}'`,
+        { repo_id: repo.id, repo_name: repo.name, skill_id: skillId }
+      );
+    }
+
     return this.deps.locks.withLock(repo.id, async () => {
       if (!repo.local_path) {
         throw new AstackError(
@@ -575,6 +584,24 @@ export class SyncService {
         ErrorCode.NO_ACTIVE_CONFLICT,
         "no active conflict to resolve",
         { project_id: projectId, skill_id: skillId }
+      );
+    }
+
+    // Open-source repos are pull-only: keep-local and manual both push.
+    if (
+      repo.kind === "open-source" &&
+      (strategy === ResolveStrategy.KeepLocal ||
+        strategy === ResolveStrategy.Manual)
+    ) {
+      throw new AstackError(
+        ErrorCode.REPO_READONLY,
+        `cannot ${strategy} on open-source repo '${repo.name}'; only use-remote is allowed`,
+        {
+          repo_id: repo.id,
+          repo_name: repo.name,
+          skill_id: skillId,
+          strategy
+        }
       );
     }
 

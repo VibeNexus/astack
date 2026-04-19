@@ -48,6 +48,20 @@ export const SyncStatus = {
 } as const;
 export type SyncStatus = (typeof SyncStatus)[keyof typeof SyncStatus];
 
+/**
+ * Repository ownership model.
+ *
+ * - "custom"      — user's own git repo; supports two-way sync (pull + push).
+ *                   Default for 'astack repos register'.
+ * - "open-source" — third-party / read-only repo; supports pull only.
+ *                   Attempts to push return REPO_READONLY.
+ */
+export const RepoKind = {
+  Custom: "custom",
+  OpenSource: "open-source"
+} as const;
+export type RepoKind = (typeof RepoKind)[keyof typeof RepoKind];
+
 /** Liveness of a symlink on disk. */
 export const ToolLinkStatus = {
   Active: "active",
@@ -88,6 +102,12 @@ export interface SkillRepo {
   name: string;
   /** Remote git URL. Source of truth for this entity. */
   git_url: string;
+  /**
+   * Ownership model.
+   *  - "custom"      two-way sync (pull + push)
+   *  - "open-source" pull only; push returns REPO_READONLY
+   */
+  kind: RepoKind;
   /** Local clone path (~/.astack/repos/<name>/). [CACHE] */
   local_path: string | null;
   /** Current HEAD commit hash of the local clone. [CACHE] */
