@@ -23,6 +23,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@astack/server':
+        specifier: workspace:*
+        version: link:../server
       '@astack/shared':
         specifier: workspace:*
         version: link:../shared
@@ -35,6 +38,10 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+    devDependencies:
+      tmp-promise:
+        specifier: ^3.0.3
+        version: 3.0.3
 
   packages/server:
     dependencies:

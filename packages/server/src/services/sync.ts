@@ -161,10 +161,11 @@ export class SyncService {
         );
       }
 
-      // Refresh upstream mirror unless caller already did a bulk pull.
-      if (!opts.force) {
-        await this.git.pull(repo.local_path);
-      }
+      // Always refresh the upstream mirror so we see the latest remote HEAD.
+      // `opts.force` is reserved for future use (e.g. bypass local cache);
+      // we keep it as a parameter for API parity but currently always pull.
+      void opts.force;
+      await this.git.pull(repo.local_path);
 
       const upstreamHead = await this.readRepoHead(repo);
       // Persist the refreshed HEAD back into SQLite so computeState sees
@@ -330,6 +331,19 @@ export class SyncService {
       } catch (err) {
         if (err instanceof AstackError && err.code === ErrorCode.CONFLICT_DETECTED) {
           conflicts++;
+          // Surface the conflict so callers can see which skill needs
+          // /resolve. The log row was already inserted inside pullOne.
+          const logId = (err.details?.log_id as number | undefined) ?? -1;
+          const conflictLog = logId > 0
+            ? this.logs.latestForProjectSkill(project.id, sub.skill_id)
+            : null;
+          if (conflictLog) {
+            outcomes.push({
+              skill: this.mustFindSkill(sub.skill_id),
+              state: SubscriptionState.Conflict,
+              log: conflictLog
+            });
+          }
           continue;
         }
         errors++;

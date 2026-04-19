@@ -150,6 +150,56 @@ export function subscriptionsRoutes(c: ServiceContainer): Hono {
             err.code === ErrorCode.CONFLICT_DETECTED
           ) {
             conflicts++;
+            // Surface the conflict outcome so CLI/Web can show which
+            // skill needs /resolve. Fetch the skill + latest log row.
+            const skill = c.db
+              .prepare<
+                [number],
+                {
+                  id: number;
+                  repo_id: number;
+                  type: "command" | "skill";
+                  name: string;
+                  path: string;
+                  version: string | null;
+                  updated_at: string | null;
+                }
+              >(
+                `SELECT id, repo_id, type, name, path, version, updated_at
+                 FROM skills WHERE id = ?`
+              )
+              .get(skillId);
+            const log = c.db
+              .prepare<
+                [number, number],
+                {
+                  id: number;
+                  project_id: number;
+                  skill_id: number;
+                  direction: "pull" | "push";
+                  from_version: string | null;
+                  to_version: string | null;
+                  status: "success" | "conflict" | "error";
+                  conflict_detail: string | null;
+                  synced_at: string;
+                }
+              >(
+                `SELECT id, project_id, skill_id, direction, from_version,
+                        to_version, status, conflict_detail, synced_at
+                 FROM sync_logs
+                 WHERE project_id = ? AND skill_id = ?
+                 ORDER BY synced_at DESC, id DESC
+                 LIMIT 1`
+              )
+              .get(id, skillId);
+            if (skill && log) {
+              outcomes.push({
+                skill,
+                state: "conflict",
+                log,
+                new_version: null
+              } as unknown as Parameters<typeof outcomes.push>[0]);
+            }
             continue;
           }
           errors++;
