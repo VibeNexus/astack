@@ -11,6 +11,11 @@
  *     a real TCP listener
  */
 
+import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 
 import type { ServerConfig } from "../config.js";
@@ -124,6 +129,26 @@ export function createApp(opts: CreateAppOptions): AppInstance {
   app.route("/api/projects", linksRoutes(container));
   app.route("/api", eventsRoutes(container));
 
+  // Static dashboard: serve the @astack/web build when present. The CLI's
+  // 'astack server start' command is the only supported production path,
+  // and it bundles the compiled dashboard next to @astack/server.
+  const dashboardDir = locateDashboard();
+  if (dashboardDir) {
+    // Serve assets first (long-cacheable) …
+    app.use("/assets/*", serveStatic({ root: path.relative(process.cwd(), dashboardDir) }));
+    // … then fall back to index.html for any non-API GET so the SPA
+    // router can handle deep links like /resolve/1/2.
+    app.get("*", (c, next) => {
+      if (c.req.path.startsWith("/api/")) return next();
+      if (c.req.path.startsWith("/health")) return next();
+      const indexPath = path.join(dashboardDir, "index.html");
+      if (!fs.existsSync(indexPath)) return next();
+      return c.body(fs.readFileSync(indexPath, "utf8"), 200, {
+        "content-type": "text/html; charset=utf-8"
+      });
+    });
+  }
+
   app.onError(buildErrorHandler(opts.logger));
 
   return {
@@ -135,4 +160,38 @@ export function createApp(opts: CreateAppOptions): AppInstance {
       }
     }
   };
+}
+
+/**
+ * Locate the compiled dashboard directory.
+ *
+ * @astack/web is a workspace peer; when users install astack globally via
+ * npm, the dashboard dist lives alongside @astack/server's dist. We try
+ * a few reasonable locations and return null if none exist — the daemon
+ * then runs API-only.
+ */
+function locateDashboard(): string | null {
+  const require_ = createRequire(import.meta.url);
+  const candidates: string[] = [];
+
+  // 1. Resolve via the package export (works in pnpm workspace + npm global).
+  try {
+    const webPkg = require_.resolve("@astack/web/package.json");
+    candidates.push(path.join(path.dirname(webPkg), "dist"));
+  } catch {
+    // Package not available — fall through.
+  }
+
+  // 2. Adjacent to server/dist in the monorepo (development fallback).
+  try {
+    const url = new URL("../../../web/dist", import.meta.url);
+    candidates.push(url.pathname);
+  } catch {
+    // ignore
+  }
+
+  for (const c of candidates) {
+    if (fs.existsSync(path.join(c, "index.html"))) return c;
+  }
+  return null;
 }

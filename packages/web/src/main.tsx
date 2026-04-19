@@ -1,17 +1,22 @@
 /**
- * @astack/web — React dashboard for Astack.
+ * @astack/web entry point.
  *
- * Pages:
- *   / (Sync Status — default workstation view)
- *   /repos
- *   /projects
- *   /projects/:id
- *   /matrix (Skill Matrix)
- *   /history/:skill_id
- *   /resolve/:project_id/:skill_id
- *   /settings
- *
- * See docs/asset/design.md § Design Review for IA and visual direction.
+ * React 19 + React Router 7. All providers live in App.tsx.
  */
 
-export {};
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+
+import { App } from "./App.js";
+import "./styles/globals.css";
+
+const container = document.getElementById("root");
+if (!container) {
+  throw new Error("#root element not found in index.html");
+}
+
+createRoot(container).render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
