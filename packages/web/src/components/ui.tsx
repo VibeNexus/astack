@@ -30,7 +30,11 @@ export function Button({
   const padding = size === "sm" ? "px-2 py-1 text-xs" : "px-3 py-1.5 text-sm";
   const variantCss =
     variant === "primary"
-      ? "bg-accent text-base hover:bg-accent-hover"
+      ? // On the green accent we use a dark text color so the label is
+        // high-contrast. `text-base` would map to a font-size utility here,
+        // not a color — so we spell out the hex. This matches #0b0d10
+        // (the base surface).
+        "bg-accent text-[#0b0d10] hover:bg-accent-hover"
       : variant === "outline"
         ? "border border-border bg-transparent text-text-primary hover:bg-surface"
         : "bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface";

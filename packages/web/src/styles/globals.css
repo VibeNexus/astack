@@ -32,6 +32,20 @@
     @apply outline-none ring-2 ring-accent ring-offset-0;
   }
 
+  /* Form controls — inherit the dark text ramp and set a readable
+     placeholder color. Tailwind's preflight already resets background to
+     transparent; we just make sure the foreground is legible in dark. */
+  input,
+  textarea,
+  select {
+    @apply text-text-primary;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    @apply text-text-muted;
+    opacity: 1;
+  }
+
   /* Scrollbar theming (webkit) — subtle, tool-feel. */
   ::-webkit-scrollbar {
     width: 10px;

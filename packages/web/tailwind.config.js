@@ -22,10 +22,14 @@ export default {
         elevated: "#1a1e24",
         border: "#2a2f37",
 
-        // Text ramp.
-        "text-primary": "#e5e7eb",
-        "text-secondary": "#9ca3af",
-        "text-muted": "#6b7280",
+        // Text ramp. Bumped one notch brighter than the original spec
+        // (#e5e7eb / #9ca3af / #6b7280) after user feedback that section
+        // titles and form text were hard to read on the deep #0b0d10 base.
+        // These track with Tailwind's gray-100/400/500 and give us better
+        // contrast while staying within the dark-first aesthetic.
+        "text-primary": "#f3f4f6",
+        "text-secondary": "#d1d5db",
+        "text-muted": "#9ca3af",
 
         // Accent + semantic.
         accent: {

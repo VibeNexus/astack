@@ -53,7 +53,7 @@ export function Sidebar({ badges }: SidebarProps): React.JSX.Element {
     >
       <div className="px-4 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="text-lg font-semibold tracking-tight">Astack</div>
+          <div className="text-lg font-semibold tracking-tight text-text-primary">Astack</div>
           <div className="text-[10px] px-1 py-0.5 bg-elevated text-text-muted rounded-xs uppercase">
             v0.1
           </div>

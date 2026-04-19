@@ -205,7 +205,7 @@ function RegisterRepoDialog({
       aria-modal="true"
     >
       <div className="w-[440px] max-w-[90vw] bg-elevated border border-border rounded p-4 space-y-3">
-        <div className="text-lg font-semibold">Register skill repo</div>
+        <div className="text-lg font-semibold text-text-primary">Register skill repo</div>
         <label className="block text-sm">
           <div className="text-text-secondary mb-1">Git URL</div>
           <input
