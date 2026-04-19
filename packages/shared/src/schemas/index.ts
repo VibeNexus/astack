@@ -1,8 +1,12 @@
 /**
- * zod schemas for API contracts.
+ * zod schemas for all 18 API endpoints + SSE events.
  *
- * To be filled in — see docs/asset/design.md § Engineering Review § 8
- * for the 18 endpoints that need schemas.
+ * See design.md § Engineering Review decision 8 for the endpoint list.
  */
 
-export {};
+export * from "./common.js";
+export * from "./repos.js";
+export * from "./projects.js";
+export * from "./subscriptions.js";
+export * from "./links.js";
+export * from "./events.js";
