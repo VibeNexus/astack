@@ -64,7 +64,7 @@ async function wrap(
 const program = new Command();
 program
   .name("astack")
-  .description("AI Coding skill sync — manage Claude/Cursor/CodeBuddy skills across projects")
+  .description("AI Harness System — manage Claude/Cursor/CodeBuddy skills across projects")
   .version("0.1.0");
 
 // ---------- init ----------

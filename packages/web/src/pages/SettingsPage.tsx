@@ -100,7 +100,7 @@ export function SettingsPage(): React.JSX.Element {
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-text-secondary">About</h2>
         <Card className="text-sm text-text-secondary">
-          <div>Astack — AI coding skill sync.</div>
+          <div>Astack — AI Harness System.</div>
           <div className="text-text-muted text-xs mt-1">
             Dashboard served by the local daemon at 127.0.0.1:7432.
           </div>
