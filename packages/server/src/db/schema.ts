@@ -1,6 +1,15 @@
 /**
  * SQLite schema DDL for Astack.
  *
+ * Single source of truth for the shape of the database. During the
+ * pre-1.0 development phase this file represents the *current*
+ * schema — there is no version table and no migration machinery.
+ *
+ * Workflow for schema changes:
+ *   1. Edit this file.
+ *   2. Delete the local DB: `rm -f ~/.astack/astack.sqlite3*`.
+ *   3. Restart the daemon; it applies the fresh DDL.
+ *
  * Tables classified per design.md § Eng Review decision 7:
  *   [CACHE]   Rebuildable from git/files via `astack sync --refresh`.
  *   [SOURCE]  Authoritative data; only lives in SQLite (or mirrored with files).
@@ -12,9 +21,9 @@
  *                                SQLite kept in sync on every CLI operation)
  *   sync_logs        [SOURCE]  — only lives in SQLite
  *   tool_links       [SOURCE]  — filesystem is source but we cache "last known"
+ *   seed_decisions   [SOURCE]  — user decisions about builtin seed repos
+ *                                (added in v0.2 — respected by SeedService)
  */
-
-export const SCHEMA_VERSION = 1;
 
 export const SCHEMA_DDL = `
 -- ============================================================
@@ -29,6 +38,13 @@ CREATE TABLE IF NOT EXISTS skill_repos (
      compatibility when older CLI clients omit the field. */
   kind        TEXT NOT NULL DEFAULT 'custom'
               CHECK (kind IN ('custom', 'open-source')),
+  /* Lifecycle status. SeedService sets 'seeding' while cloning, flips to
+     'ready' on success or 'failed' on clone/scan error. Manual registers
+     go straight to 'ready'. No CHECK — enum is enforced in zod. */
+  status      TEXT NOT NULL DEFAULT 'ready',
+  /* Scanner layout override as JSON. NULL = use DEFAULT_SCAN_CONFIG
+     (skills/<n>/SKILL.md + commands/*.md). See @astack/shared ScanConfig. */
+  scan_config TEXT,
   local_path  TEXT,
   head_hash   TEXT,
   last_synced TEXT,
@@ -50,13 +66,16 @@ CREATE TABLE IF NOT EXISTS projects (
 -- [CACHE] skills — meta-skills discovered in repos
 -- ============================================================
 CREATE TABLE IF NOT EXISTS skills (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  repo_id    INTEGER NOT NULL REFERENCES skill_repos(id) ON DELETE CASCADE,
-  type       TEXT NOT NULL CHECK (type IN ('command', 'skill')),
-  name       TEXT NOT NULL,
-  path       TEXT NOT NULL,
-  version    TEXT,
-  updated_at TEXT,
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo_id     INTEGER NOT NULL REFERENCES skill_repos(id) ON DELETE CASCADE,
+  type        TEXT NOT NULL CHECK (type IN ('command', 'skill', 'agent')),
+  name        TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  /* Human-readable description from SKILL.md YAML frontmatter. NULL when
+     the file has no frontmatter or the 'description' field is missing. */
+  description TEXT,
+  version     TEXT,
+  updated_at  TEXT,
   UNIQUE(repo_id, type, name)
 );
 
@@ -113,10 +132,13 @@ CREATE TABLE IF NOT EXISTS tool_links (
 );
 
 -- ============================================================
--- meta — schema version tracking for future migrations
+-- [SOURCE] seed_decisions — user opt-out of builtin seed repos
+-- SeedService checks this before re-seeding; an entry here means the
+-- user explicitly removed that seed and does NOT want it reinstalled.
 -- ============================================================
-CREATE TABLE IF NOT EXISTS meta (
-  key   TEXT PRIMARY KEY,
-  value TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS seed_decisions (
+  url        TEXT PRIMARY KEY,
+  decision   TEXT NOT NULL CHECK (decision IN ('removed')),
+  decided_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 `;

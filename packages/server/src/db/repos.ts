@@ -3,16 +3,9 @@
  *
  * Thin layer over SQLite `skill_repos` table. Returns strongly-typed
  * rows matching the `SkillRepo` domain type.
- *
- * Schema v2 (planned in PR2 of the v0.2 iteration) adds two columns:
- * `status` and `scan_config`. PR1 extends the domain type but leaves the
- * DB schema untouched; this file compensates by injecting default values
- * for those fields on read. PR2 will swap `SELECT_COLS` and `INSERT` to
- * use the real columns.
  */
 
 import {
-  DEFAULT_SCAN_CONFIG,
   RepoStatus,
   type RepoKind,
   type ScanConfig,
@@ -21,32 +14,53 @@ import {
 
 import type { Db } from "./connection.js";
 
-/** Shape of the row actually returned by SELECT (v1 schema). */
-interface SkillRepoRowV1 {
+/** Columns selected to hydrate a `SkillRepo`. */
+const SELECT_COLS =
+  "id, name, git_url, kind, status, scan_config, local_path, head_hash, last_synced, created_at";
+
+/**
+ * Row as returned by SELECT: `scan_config` is a raw JSON string (or NULL)
+ * because SQLite has no JSON column type. We deserialize on the way out.
+ */
+interface SkillRepoRow {
   id: number;
   name: string;
   git_url: string;
   kind: RepoKind;
+  status: string;
+  scan_config: string | null;
   local_path: string | null;
   head_hash: string | null;
   last_synced: string | null;
   created_at: string;
 }
 
-/** Columns to SELECT on the v1 schema. */
-const SELECT_COLS =
-  "id, name, git_url, kind, local_path, head_hash, last_synced, created_at";
-
-/**
- * Lift a v1 row into the v2 `SkillRepo` domain shape by supplying defaults
- * for columns that don't yet exist in the DB (PR2 adds them).
- */
-function liftRow(row: SkillRepoRowV1): SkillRepo {
+function hydrate(row: SkillRepoRow): SkillRepo {
   return {
-    ...row,
-    status: RepoStatus.Ready,
-    scan_config: null
+    id: row.id,
+    name: row.name,
+    git_url: row.git_url,
+    kind: row.kind,
+    status: normalizeStatus(row.status),
+    scan_config: row.scan_config ? (JSON.parse(row.scan_config) as ScanConfig) : null,
+    local_path: row.local_path,
+    head_hash: row.head_hash,
+    last_synced: row.last_synced,
+    created_at: row.created_at
   };
+}
+
+function normalizeStatus(raw: string): SkillRepo["status"] {
+  // The DB column has no CHECK constraint (zod owns enum validation);
+  // fall back to Ready for any unexpected value.
+  if (
+    raw === RepoStatus.Ready ||
+    raw === RepoStatus.Seeding ||
+    raw === RepoStatus.Failed
+  ) {
+    return raw;
+  }
+  return RepoStatus.Ready;
 }
 
 export class RepoRepository {
@@ -57,66 +71,70 @@ export class RepoRepository {
     git_url: string;
     kind: RepoKind;
     local_path: string | null;
-    /**
-     * Accepted but not yet persisted (PR2 adds the column). Callers may
-     * pass a value today; it is a no-op at the DB layer.
-     */
+    /** Null / undefined = use DEFAULT_SCAN_CONFIG at scan time. */
     scan_config?: ScanConfig | null;
+    /** Defaults to 'ready'. SeedService passes 'seeding' while cloning. */
+    status?: SkillRepo["status"];
   }): SkillRepo {
-    const stmt = this.db.prepare<
-      [string, string, RepoKind, string | null],
-      SkillRepoRowV1
-    >(
-      `INSERT INTO skill_repos (name, git_url, kind, local_path)
-       VALUES (?, ?, ?, ?)
-       RETURNING ${SELECT_COLS}`
-    );
-    const row = stmt.get(input.name, input.git_url, input.kind, input.local_path);
+    const scanJson =
+      input.scan_config == null ? null : JSON.stringify(input.scan_config);
+    const status = input.status ?? RepoStatus.Ready;
+
+    const row = this.db
+      .prepare<
+        [string, string, RepoKind, string, string | null, string | null],
+        SkillRepoRow
+      >(
+        `INSERT INTO skill_repos (name, git_url, kind, status, scan_config, local_path)
+         VALUES (?, ?, ?, ?, ?, ?)
+         RETURNING ${SELECT_COLS}`
+      )
+      .get(
+        input.name,
+        input.git_url,
+        input.kind,
+        status,
+        scanJson,
+        input.local_path
+      );
     if (!row) {
       throw new Error("insert skill_repos returned no row");
     }
-    // PR2 will persist scan_config; for now we return the caller's value
-    // without a round-trip so tests asserting scan_config on register see
-    // what they passed in.
-    const lifted = liftRow(row);
-    if (input.scan_config !== undefined) {
-      lifted.scan_config = input.scan_config;
-    }
-    return lifted;
+    return hydrate(row);
   }
 
   findById(id: number): SkillRepo | null {
     const row = this.db
-      .prepare<[number], SkillRepoRowV1>(
+      .prepare<[number], SkillRepoRow>(
         `SELECT ${SELECT_COLS} FROM skill_repos WHERE id = ?`
       )
       .get(id);
-    return row ? liftRow(row) : null;
+    return row ? hydrate(row) : null;
   }
 
   findByName(name: string): SkillRepo | null {
     const row = this.db
-      .prepare<[string], SkillRepoRowV1>(
+      .prepare<[string], SkillRepoRow>(
         `SELECT ${SELECT_COLS} FROM skill_repos WHERE name = ?`
       )
       .get(name);
-    return row ? liftRow(row) : null;
+    return row ? hydrate(row) : null;
   }
 
   findByGitUrl(url: string): SkillRepo | null {
     const row = this.db
-      .prepare<[string], SkillRepoRowV1>(
+      .prepare<[string], SkillRepoRow>(
         `SELECT ${SELECT_COLS} FROM skill_repos WHERE git_url = ?`
       )
       .get(url);
-    return row ? liftRow(row) : null;
+    return row ? hydrate(row) : null;
   }
 
   list(
     opts: { offset: number; limit: number } = { offset: 0, limit: 50 }
   ): { rows: SkillRepo[]; total: number } {
     const rows = this.db
-      .prepare<[number, number], SkillRepoRowV1>(
+      .prepare<[number, number], SkillRepoRow>(
         `SELECT ${SELECT_COLS} FROM skill_repos ORDER BY id LIMIT ? OFFSET ?`
       )
       .all(opts.limit, opts.offset);
@@ -125,7 +143,7 @@ export class RepoRepository {
         .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM skill_repos")
         .get() ?? { c: 0 }
     ).c;
-    return { rows: rows.map(liftRow), total };
+    return { rows: rows.map(hydrate), total };
   }
 
   updateSyncState(
@@ -139,6 +157,15 @@ export class RepoRepository {
       .run(fields.head_hash, fields.last_synced, id);
   }
 
+  /** Used by SeedService to flip 'seeding' → 'ready' or 'failed'. */
+  updateStatus(id: number, status: SkillRepo["status"]): void {
+    this.db
+      .prepare<[string, number]>(
+        `UPDATE skill_repos SET status = ? WHERE id = ?`
+      )
+      .run(status, id);
+  }
+
   delete(id: number): boolean {
     const info = this.db
       .prepare<[number]>("DELETE FROM skill_repos WHERE id = ?")
@@ -146,6 +173,3 @@ export class RepoRepository {
     return info.changes > 0;
   }
 }
-
-/** Re-export for tests that want to craft expected rows. */
-export { DEFAULT_SCAN_CONFIG };

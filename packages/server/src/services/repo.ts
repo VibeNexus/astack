@@ -193,12 +193,6 @@ export class RepoService {
 
     const finalRepo = this.repos.findById(repoRow.id);
     if (!finalRepo) throw new Error("repo row disappeared after insert");
-    // PR1: scan_config is not yet persisted in the DB (PR2 adds the
-    // column). Preserve what the caller requested so downstream observers
-    // (SSE, register response) see a consistent shape.
-    if (scanConfig !== null) {
-      finalRepo.scan_config = scanConfig;
-    }
 
     this.deps.events.emit({
       type: EventType.RepoRegistered,

@@ -513,6 +513,7 @@ export class SyncService {
         type: skill.type,
         name: skill.name,
         path: skill.path,
+        description: skill.description,
         version: newHash,
         updated_at: this.now().toISOString()
       });

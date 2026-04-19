@@ -19,8 +19,6 @@ describe("@astack/server public surface", () => {
     expect(typeof pkg.createLogger).toBe("function");
     expect(typeof pkg.nullLogger).toBe("function");
     expect(typeof pkg.openDatabase).toBe("function");
-    expect(typeof pkg.migrate).toBe("function");
-    expect(typeof pkg.getSchemaVersion).toBe("function");
     expect(typeof pkg.deriveNameFromUrl).toBe("function");
   });
 

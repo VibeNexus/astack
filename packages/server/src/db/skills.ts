@@ -3,35 +3,16 @@
  *
  * Skills are [CACHE] — fully derived from scanning git repos.
  * `astack sync --refresh` can DELETE + re-INSERT any row here.
- *
- * Schema v2 (planned in PR2 of v0.2) adds `description` column read from
- * SKILL.md frontmatter, and extends `type` CHECK to include 'agent'. PR1
- * extends the domain type; the DB schema is upgraded in PR2. Until then,
- * this file injects `description = null` on read.
  */
 
 import type { Skill, SkillType } from "@astack/shared";
 
 import type { Db } from "./connection.js";
 
-/** v1 row shape (no description). */
-interface SkillRowV1 {
-  id: number;
-  repo_id: number;
-  type: SkillType;
-  name: string;
-  path: string;
-  version: string | null;
-  updated_at: string | null;
-}
+type SkillRow = Skill;
 
-/** v1 SELECT columns. */
-const SELECT_COLS = "id, repo_id, type, name, path, version, updated_at";
-
-/** Lift v1 row into v2 Skill domain by defaulting `description` to null. */
-function liftRow(row: SkillRowV1): Skill {
-  return { ...row, description: null };
-}
+const SELECT_COLS =
+  "id, repo_id, type, name, path, description, version, updated_at";
 
 export class SkillRepository {
   constructor(private readonly db: Db) {}
@@ -39,27 +20,34 @@ export class SkillRepository {
   /**
    * Upsert a skill record keyed by (repo_id, type, name).
    * Returns the resulting row (new or updated).
-   *
-   * `description` is accepted but not yet persisted (PR2 adds the column).
    */
   upsert(input: {
     repo_id: number;
     type: SkillType;
     name: string;
     path: string;
-    description?: string | null;
+    description: string | null;
     version: string | null;
     updated_at: string | null;
   }): Skill {
     const row = this.db
       .prepare<
-        [number, SkillType, string, string, string | null, string | null],
-        SkillRowV1
+        [
+          number,
+          SkillType,
+          string,
+          string,
+          string | null,
+          string | null,
+          string | null
+        ],
+        SkillRow
       >(
-        `INSERT INTO skills (repo_id, type, name, path, version, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO skills (repo_id, type, name, path, description, version, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(repo_id, type, name) DO UPDATE SET
            path = excluded.path,
+           description = excluded.description,
            version = excluded.version,
            updated_at = excluded.updated_at
          RETURNING ${SELECT_COLS}`
@@ -69,25 +57,22 @@ export class SkillRepository {
         input.type,
         input.name,
         input.path,
+        input.description,
         input.version,
         input.updated_at
       );
 
     if (!row) throw new Error("upsert skills returned no row");
-    const lifted = liftRow(row);
-    if (input.description !== undefined) {
-      lifted.description = input.description;
-    }
-    return lifted;
+    return row;
   }
 
   findById(id: number): Skill | null {
     const row = this.db
-      .prepare<[number], SkillRowV1>(
+      .prepare<[number], SkillRow>(
         `SELECT ${SELECT_COLS} FROM skills WHERE id = ?`
       )
       .get(id);
-    return row ? liftRow(row) : null;
+    return row ?? null;
   }
 
   findByRef(
@@ -96,12 +81,12 @@ export class SkillRepository {
     name: string
   ): Skill | null {
     const row = this.db
-      .prepare<[number, SkillType, string], SkillRowV1>(
+      .prepare<[number, SkillType, string], SkillRow>(
         `SELECT ${SELECT_COLS} FROM skills
          WHERE repo_id = ? AND type = ? AND name = ?`
       )
       .get(repo_id, type, name);
-    return row ? liftRow(row) : null;
+    return row ?? null;
   }
 
   /**
@@ -110,20 +95,18 @@ export class SkillRepository {
    */
   findByShortName(name: string): Skill[] {
     return this.db
-      .prepare<[string], SkillRowV1>(
+      .prepare<[string], SkillRow>(
         `SELECT ${SELECT_COLS} FROM skills WHERE name = ?`
       )
-      .all(name)
-      .map(liftRow);
+      .all(name);
   }
 
   listByRepo(repo_id: number): Skill[] {
     return this.db
-      .prepare<[number], SkillRowV1>(
+      .prepare<[number], SkillRow>(
         `SELECT ${SELECT_COLS} FROM skills WHERE repo_id = ? ORDER BY type, name`
       )
-      .all(repo_id)
-      .map(liftRow);
+      .all(repo_id);
   }
 
   /** Delete all skills of a repo (used by `astack sync --refresh`). */

@@ -7,6 +7,10 @@
  *   - foreign_keys ON (enforce referential integrity)
  *
  * Tests use `:memory:` for full isolation per-test.
+ *
+ * No schema migrations during the pre-1.0 development phase: see
+ * `schema.ts` — the DDL is idempotent (CREATE TABLE IF NOT EXISTS), and
+ * when the shape changes, the developer deletes the local DB and restarts.
  */
 
 import path from "node:path";
@@ -14,14 +18,14 @@ import fs from "node:fs";
 
 import Database, { type Database as Db } from "better-sqlite3";
 
-import { SCHEMA_DDL, SCHEMA_VERSION } from "./schema.js";
+import { SCHEMA_DDL } from "./schema.js";
 
 export type { Db };
 
 export interface OpenDbOptions {
   /** Absolute path, or ":memory:" for in-memory (tests). */
   path: string;
-  /** Set to false to skip schema migrations (tests may want raw DB). */
+  /** Set to false to skip schema DDL (tests may want a raw DB). */
   migrate?: boolean;
 }
 
@@ -45,40 +49,8 @@ export function openDatabase(opts: OpenDbOptions): Db {
   db.pragma("synchronous = NORMAL");
 
   if (opts.migrate !== false) {
-    migrate(db);
+    db.exec(SCHEMA_DDL);
   }
 
   return db;
-}
-
-/**
- * Apply schema migrations.
- *
- * v1: initial schema. Future migrations add here, each gated by
- * `currentVersion < N` and bumping `meta.schema_version` at the end.
- */
-export function migrate(db: Db): void {
-  db.exec(SCHEMA_DDL);
-
-  const row = db
-    .prepare<[], { value: string }>("SELECT value FROM meta WHERE key = 'schema_version'")
-    .get();
-  const currentVersion = row ? parseInt(row.value, 10) : 0;
-
-  if (currentVersion < SCHEMA_VERSION) {
-    // Future: apply v(currentVersion+1 ... SCHEMA_VERSION) migrations here.
-    db.prepare<[string, string]>(
-      "INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)"
-    ).run("schema_version", String(SCHEMA_VERSION));
-  }
-}
-
-/** Read the current schema version. Returns 0 if meta table is empty. */
-export function getSchemaVersion(db: Db): number {
-  const row = db
-    .prepare<[], { value: string }>(
-      "SELECT value FROM meta WHERE key = 'schema_version'"
-    )
-    .get();
-  return row ? parseInt(row.value, 10) : 0;
 }

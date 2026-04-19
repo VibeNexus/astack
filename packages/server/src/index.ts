@@ -11,8 +11,6 @@ export { loadConfig, type ServerConfig } from "./config.js";
 export { createLogger, nullLogger, type Logger, type LogLevel } from "./logger.js";
 export {
   openDatabase,
-  migrate,
-  getSchemaVersion,
   type Db
 } from "./db/connection.js";
 export { LockManager, type LockManagerOptions } from "./lock.js";
