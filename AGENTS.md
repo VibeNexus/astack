@@ -30,4 +30,46 @@
 
 ## 5. 当前活跃迭代
 
-（无活跃迭代）
+- **v0.2 — sqlite 换底 + 多仓库目录兼容**（APPROVED，已通过 `/plan-eng-review`）
+  - Spec: [`docs/version/v0.2-sqlite-and-multi-repo.md`](docs/version/v0.2-sqlite-and-multi-repo.md)
+  - 4 个 PR 顺序执行：PR0 spike → PR1 scanner 通用化 → PR2 schema v2 → PR3 driver 替换 → PR4 SeedService
+
+## 6. gstack
+
+Use the `/browse` skill from gstack for **all web browsing**. Never use `mcp__claude-in-chrome__*` tools.
+
+### Available Skills
+
+- `/office-hours`
+- `/plan-ceo-review`
+- `/plan-eng-review`
+- `/plan-design-review`
+- `/design-consultation`
+- `/design-shotgun`
+- `/design-html`
+- `/review`
+- `/ship`
+- `/land-and-deploy`
+- `/canary`
+- `/benchmark`
+- `/browse`
+- `/connect-chrome`
+- `/qa`
+- `/qa-only`
+- `/design-review`
+- `/setup-browser-cookies`
+- `/setup-deploy`
+- `/retro`
+- `/investigate`
+- `/document-release`
+- `/codex`
+- `/cso`
+- `/autoplan`
+- `/plan-devex-review`
+- `/devex-review`
+- `/careful`
+- `/freeze`
+- `/guard`
+- `/unfreeze`
+- `/gstack-upgrade`
+- `/learn`
