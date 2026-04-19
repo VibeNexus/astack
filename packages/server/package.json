@@ -1,0 +1,32 @@
+{
+  "name": "@astack/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "astack-server": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "start": "node dist/bin.js",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@astack/shared": "workspace:*",
+    "@hono/node-server": "^1.14.0",
+    "@hono/zod-validator": "^0.4.2",
+    "better-sqlite3": "^11.7.0",
+    "hono": "^4.6.15",
+    "simple-git": "^3.27.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "tmp-promise": "^3.0.3"
+  }
+}

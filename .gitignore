@@ -44,3 +44,4 @@ coverage/
 # Turborepo / monorepo caches
 .turbo/
 .cache/
+*.tsbuildinfo

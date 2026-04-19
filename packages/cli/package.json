@@ -1,0 +1,23 @@
+{
+  "name": "@astack/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "astack": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@astack/shared": "workspace:*",
+    "commander": "^13.0.0",
+    "kleur": "^4.1.5",
+    "zod": "^3.24.1"
+  }
+}
