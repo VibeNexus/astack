@@ -23,3 +23,5 @@ export { EmptyState } from "./EmptyState.js";
 export { Skeleton } from "./Skeleton.js";
 export { Kbd } from "./Kbd.js";
 export { IconButton, type IconButtonProps } from "./IconButton.js";
+export { Tabs, TabPanel, type TabItem, type TabsProps, type TabPanelProps } from "./Tabs.js";
+export { Drawer, DrawerHeader, type DrawerProps } from "./Drawer.js";
