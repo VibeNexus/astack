@@ -11,3 +11,4 @@ export * from "./subscriptions.js";
 export * from "./links.js";
 export * from "./events.js";
 export * from "./fs.js";
+export * from "./harness.js";

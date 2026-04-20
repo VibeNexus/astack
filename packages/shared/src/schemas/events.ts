@@ -60,7 +60,19 @@ export const EventType = {
    * returns (success OR failure for each seed). Web dashboard uses this
    * to show a dismissable banner when failed > 0.
    */
-  SeedCompleted: "seed.completed"
+  SeedCompleted: "seed.completed",
+
+  /**
+   * System-skill installation state changed for a project (v0.4).
+   *
+   * Emitted by SystemSkillService when it actually writes to the filesystem
+   * (seed / seedIfMissing wrote new content) or when a seed attempt failed.
+   * Pure inspect (GET /api/projects/:id/harness) does NOT emit this event.
+   *
+   * The payload carries the new status so clients can update state without
+   * re-fetching. See v0.4 spec §A5.
+   */
+  HarnessChanged: "harness.changed"
 } as const;
 export type EventType = (typeof EventType)[keyof typeof EventType];
 
@@ -154,6 +166,23 @@ export const SeedCompletedPayloadSchema = z.object({
   failed_names: z.array(z.string())
 });
 
+/**
+ * HarnessChanged: a system skill's on-disk state transitioned (v0.4).
+ *
+ * `status` is the new HarnessStatus. Web clients map this to tab-badge
+ * color + panel content without hitting `GET /harness` again.
+ *
+ * - `seeded_at` present for `installed` / `drift` (optional for failed)
+ * - `last_error` present only for `seed_failed`
+ */
+export const HarnessChangedPayloadSchema = z.object({
+  project_id: z.number().int().positive(),
+  skill_id: z.string(),
+  status: z.enum(["installed", "drift", "missing", "seed_failed"]),
+  seeded_at: z.string().nullable().optional(),
+  last_error: z.string().nullable().optional()
+});
+
 // ---------- Discriminated union ----------
 
 /**
@@ -216,6 +245,10 @@ export const AstackEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(EventType.SeedCompleted),
     payload: SeedCompletedPayloadSchema
+  }),
+  z.object({
+    type: z.literal(EventType.HarnessChanged),
+    payload: HarnessChangedPayloadSchema
   })
 ]);
 export type AstackEvent = z.infer<typeof AstackEventSchema>;

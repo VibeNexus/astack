@@ -390,3 +390,69 @@ export interface ProjectStatus {
   /** Timestamp of last successful sync of any skill in this project. */
   last_synced: IsoDateTime | null;
 }
+
+// ---------- System skills (v0.4) ----------
+
+/**
+ * Astack-authored skill shipped inside `@astack/server` itself (not
+ * cloned from a user repo). See v0.4 spec §A1 for why this is a
+ * separate domain concept from `Skill`.
+ *
+ * v0.4 ships exactly one: `harness-init`, which seeds the Harness
+ * governance scaffolding (AGENTS.md + docs/version/ + docs/retro/)
+ * into projects on register.
+ *
+ * `content_hash` is computed at daemon startup by iterating the
+ * bundled source directory; used to detect drift when a project's
+ * seeded copy diverges from the built-in version.
+ */
+export interface SystemSkill {
+  id: string;
+  name: string;
+  description: string;
+  source_path: string;
+  content_hash: string;
+}
+
+/**
+ * Installation state of a system skill in a project.
+ *
+ *   - "installed"   — seed dir exists and its hash matches the built-in version
+ *   - "drift"       — seed dir exists but hash differs (user modified it);
+ *                     will be overwritten on next Re-install
+ *   - "missing"     — seed dir not present (project never seeded, or deleted)
+ *   - "seed_failed" — last seed attempt threw; stub.last_error has details
+ *
+ * Built-in version is the source of truth — drift is not a conflict,
+ * just a notice. See v0.4 spec §A2.
+ */
+export const HarnessStatus = {
+  Installed: "installed",
+  Drift: "drift",
+  Missing: "missing",
+  SeedFailed: "seed_failed"
+} as const;
+export type HarnessStatus = (typeof HarnessStatus)[keyof typeof HarnessStatus];
+
+/**
+ * Per-project view of a system skill's installation state.
+ *
+ * Returned by `GET /api/projects/:id/harness` and by
+ * `POST /api/projects/:id/harness/install`.
+ *
+ *   - `stub_built_in_hash` records what the built-in version was AT SEED TIME.
+ *     Used in v0.5 for "Built-in updated, Re-install to sync" prompts;
+ *     v0.4 exposes but does not act on it.
+ *   - `actual_hash` is the live hash of the seed dir, only non-null when
+ *     status is `drift` (useful diagnostics for users).
+ *   - `last_error` only populated when status === 'seed_failed'.
+ */
+export interface ProjectHarnessState {
+  project_id: Id;
+  skill: SystemSkill;
+  status: HarnessStatus;
+  seeded_at: IsoDateTime | null;
+  stub_built_in_hash: string | null;
+  actual_hash: string | null;
+  last_error: string | null;
+}
