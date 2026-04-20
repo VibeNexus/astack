@@ -18,6 +18,7 @@ import type * as React from "react";
  */
 
 import type { RepoKind, Skill, SkillRepo } from "@astack/shared";
+import { isBuiltinSeedUrl } from "@astack/shared";
 import {
   useCallback,
   useEffect,
@@ -272,11 +273,12 @@ function RepoCard({
         <div className="relative pointer-events-none flex items-start justify-between gap-4 px-5 py-4">
           {/* Title + metadata column */}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <Chevron open={expanded} />
-              <span className="text-lg font-semibold text-fg-primary truncate">
+              <span className="text-lg font-semibold text-fg-primary truncate min-w-0">
                 {repo.name}
               </span>
+              <RepoSourceTag repo={repo} />
             </div>
 
             <div className="mt-1 ml-[22px] flex items-center gap-3 text-xs text-fg-tertiary">
@@ -360,6 +362,46 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
   );
 }
 
+/**
+ * Source-of-origin tag next to the repo title.
+ *
+ *   - "Built-in"   — one of the seeded repos that astack distributes by
+ *                    default (anthropic-skills / gstack / everything-claude-code).
+ *                    Matched by URL so it survives rename.
+ *   - "Open source"— third-party repo the user registered themselves
+ *                    (kind=open-source, not in the seed list).
+ *   - (nothing)    — user's own custom repo. Default state, no tag needed.
+ *
+ * Visual weight is deliberately light: these are labels, not status.
+ */
+function RepoSourceTag({ repo }: { repo: SkillRepo }): React.JSX.Element | null {
+  const isBuiltin = isBuiltinSeedUrl(repo.git_url);
+  if (isBuiltin) {
+    // Slight accent tint — it's ours.
+    return (
+      <span
+        className="inline-flex items-center h-5 px-1.5 rounded-xs
+          text-[11px] font-medium tracking-wide uppercase
+          text-accent bg-accent/10 border border-accent/20"
+      >
+        Built-in
+      </span>
+    );
+  }
+  if (repo.kind === "open-source") {
+    return (
+      <span
+        className="inline-flex items-center h-5 px-1.5 rounded-xs
+          text-[11px] font-medium tracking-wide uppercase
+          text-fg-secondary bg-surface-2 border border-line-subtle"
+      >
+        Open source
+      </span>
+    );
+  }
+  return null;
+}
+
 function stripGitHubPrefix(url: string): string {
   // Visual cleanup: users don't need to read the https:// or .git on
   // every row. Keep the full url on hover via the title attr upstream.
@@ -435,6 +477,8 @@ function SkillList({
     groups[key].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // Each section tracks its own collapse state independently. All start
+  // open so existing behavior is preserved; clicking the header toggles.
   return (
     <div className="space-y-5">
       {(["skill", "command", "agent"] as const).map((t) =>
@@ -453,25 +497,43 @@ function SkillGroup({
   type: "skill" | "command" | "agent";
   items: readonly Skill[];
 }): React.JSX.Element {
+  const [open, setOpen] = useState(true);
   const label =
     type === "skill" ? "Skills" : type === "command" ? "Commands" : "Agents";
+  const headingId = `skill-group-${type}`;
+
   return (
     <section>
-      <header className="mb-3 flex items-baseline gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`${headingId}-panel`}
+        id={headingId}
+        onClick={() => setOpen((v) => !v)}
+        className="group mb-3 flex items-center gap-2 text-left select-none"
+      >
+        <Chevron open={open} />
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-tertiary group-hover:text-fg-secondary transition-colors">
           {label}
         </h3>
         <span className="text-xs tabular text-fg-quaternary">
           {items.length}
         </span>
-      </header>
-      {/* Two columns gives each skill + description room to breathe.
-          Three-column grid forced descriptions to collide/truncate. */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3.5">
-        {items.map((s) => (
-          <SkillRow key={s.id} skill={s} />
-        ))}
-      </div>
+      </button>
+      {open ? (
+        // Two columns gives each skill + description room to breathe.
+        // Three-column grid forced descriptions to collide/truncate.
+        <div
+          id={`${headingId}-panel`}
+          role="region"
+          aria-labelledby={headingId}
+          className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3.5"
+        >
+          {items.map((s) => (
+            <SkillRow key={s.id} skill={s} />
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

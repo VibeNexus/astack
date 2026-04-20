@@ -26,6 +26,10 @@
 
 import { ScanRootKind, type ScanConfig } from "@astack/shared";
 
+// Re-export the URL helper from shared so existing server code keeps
+// importing `isBuiltinSeedUrl` from "./seeds.js".
+export { isBuiltinSeedUrl, BUILTIN_SEED_URLS } from "@astack/shared";
+
 export interface BuiltinSeed {
   /**
    * Repo name — becomes the directory name under ~/.astack/repos/<name>
@@ -81,12 +85,3 @@ export const BUILTIN_SEEDS: readonly BuiltinSeed[] = [
     }
   }
 ] as const;
-
-/**
- * True iff the given git URL belongs to a builtin seed. Used by
- * RepoService.remove() to decide whether to write a `seed_decisions`
- * row so the seed doesn't come back on next daemon start.
- */
-export function isBuiltinSeedUrl(url: string): boolean {
-  return BUILTIN_SEEDS.some((s) => s.git_url === url);
-}

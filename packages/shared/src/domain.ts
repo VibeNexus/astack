@@ -188,6 +188,24 @@ export const DEFAULT_SCAN_CONFIG: ScanConfig = {
   ]
 };
 
+/**
+ * URLs of the builtin seed repos that SeedService clones on first run.
+ *
+ * Shared by server (`BUILTIN_SEEDS` rich config) and web (displays a
+ * "Built-in" tag on those repos). Both read from here so the set stays
+ * in sync.
+ */
+export const BUILTIN_SEED_URLS: readonly string[] = [
+  "https://github.com/anthropics/skills.git",
+  "https://github.com/garrytan/gstack.git",
+  "https://github.com/affaan-m/everything-claude-code.git"
+];
+
+/** True iff the given git URL matches one of the builtin seed URLs. */
+export function isBuiltinSeedUrl(url: string): boolean {
+  return BUILTIN_SEED_URLS.includes(url);
+}
+
 /** A registered skill git repository (the "upstream mirror" source). */
 export interface SkillRepo {
   id: Id;
