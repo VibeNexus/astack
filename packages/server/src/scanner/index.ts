@@ -56,10 +56,26 @@ export interface ScanResult {
  * @param repoPath   Absolute path to the cloned repo.
  * @param config     Scan layout. Defaults to the pre-v0.2 "standard"
  *                   convention: skills/<n>/SKILL.md + commands/*.md.
+ * @param options    Optional filters. `systemSkillIds` excludes
+ *                   `type=skill` entries whose name collides with a
+ *                   reserved system skill id (v0.4 A9) — these would
+ *                   otherwise pollute `<project>/.claude/skills/<id>/`
+ *                   where astack stores its own system-skill seeds.
  */
+export interface ScanOptions {
+  /**
+   * Skill names (type=skill only) to exclude from scan results.
+   * Used to keep user-authored repo skills from colliding with the
+   * bundled system skills (v0.4 `harness-init`). Excluded entries
+   * are reported via `warnings` so callers can log them.
+   */
+  systemSkillIds?: ReadonlySet<string>;
+}
+
 export function scanRepo(
   repoPath: string,
-  config: ScanConfig = DEFAULT_SCAN_CONFIG
+  config: ScanConfig = DEFAULT_SCAN_CONFIG,
+  options: ScanOptions = {}
 ): ScanResult {
   const skills: ScannedSkill[] = [];
   const warnings: string[] = [];
@@ -97,5 +113,22 @@ export function scanRepo(
     deduped.push(s);
   }
 
-  return { skills: deduped, warnings };
+  // Filter system-skill-reserved names (v0.4 A9). Only affects type=skill:
+  // commands/agents live in separate subdirs so never collide with system
+  // skill seed directories.
+  const blacklist = options.systemSkillIds ?? new Set<string>();
+  if (blacklist.size === 0) {
+    return { skills: deduped, warnings };
+  }
+  const filtered: ScannedSkill[] = [];
+  for (const s of deduped) {
+    if (s.type === SkillType.Skill && blacklist.has(s.name)) {
+      warnings.push(
+        `skill '${s.name}' in ${s.relPath} conflicts with a reserved system skill name; excluded from repo skills`
+      );
+      continue;
+    }
+    filtered.push(s);
+  }
+  return { skills: filtered, warnings };
 }

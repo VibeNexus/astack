@@ -56,6 +56,16 @@ export interface RepoServiceDeps {
   gitImpl?: GitImpl;
   /** Clock override for tests. */
   now?: () => number;
+  /**
+   * Lazy provider for system-skill IDs (v0.4 A9). Called on every
+   * scan to exclude same-named user skills from scan results.
+   *
+   * Function-based to avoid a construction-order coupling with
+   * SystemSkillService (which itself depends on ProjectService; RepoService
+   * is constructed earlier in the DI chain). Default: empty set (no filter)
+   * for pre-v0.4 callers and tests.
+   */
+  systemSkillIds?: () => ReadonlySet<string>;
 }
 
 /** Minimal git surface that RepoService consumes (test-override point). */
@@ -408,7 +418,8 @@ export class RepoService {
     scanConfig: ScanConfig | null
   ): Skill[] {
     const config = scanConfig ?? DEFAULT_SCAN_CONFIG;
-    const { skills, warnings } = scanRepo(localPath, config);
+    const systemSkillIds = this.deps.systemSkillIds?.() ?? undefined;
+    const { skills, warnings } = scanRepo(localPath, config, { systemSkillIds });
 
     for (const w of warnings) {
       this.deps.logger.warn("scan.warning", { repo_id: repoId, detail: w });
