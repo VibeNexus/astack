@@ -13,6 +13,15 @@ export default defineConfig({
         external: [/^node:sqlite$/]
       }
     },
+    // E2E specs in packages/web/e2e/ are Playwright, not vitest. They
+    // share the `.spec.ts` suffix for Playwright's default pattern, so we
+    // exclude them here or vitest tries to run them and crashes because
+    // `test.describe` from `@playwright/test` is incompatible with vitest.
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/e2e/**"
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
@@ -26,7 +35,8 @@ export default defineConfig({
         "**/dist/**",
         "**/node_modules/**",
         "**/*.config.*",
-        "**/bin.ts"
+        "**/bin.ts",
+        "**/e2e/**"
       ]
     }
   }

@@ -127,8 +127,12 @@ function printUsage(): void {
 
 async function cmdStart(config: ServerConfig): Promise<void> {
   const logger = createLogger("info");
+  // Respected by E2E harness (packages/web/e2e/fixtures/start-server.mjs) to
+  // prevent real git clones of BUILTIN_SEEDS during smoke tests. Unset in
+  // production — users want the seeded repos.
+  const seedsDisabled = process.env.ASTACK_DISABLE_SEEDS === "1";
   try {
-    const handle = await startDaemon(config, logger);
+    const handle = await startDaemon(config, logger, { seeds: !seedsDisabled });
     installSignalHandlers(handle, logger);
     process.stdout.write(
       `astack-server listening on http://${config.host}:${config.port}\n`
@@ -188,9 +192,21 @@ function cmdLogs(config: ServerConfig, args: string[]): void {
   process.stdout.write(tail.join("\n"));
 }
 
-main().catch((err) => {
-  process.stderr.write(
-    `fatal: ${err instanceof Error ? err.message : String(err)}\n`
-  );
-  process.exit(1);
-});
+// Only run main() when this file is invoked as a script (e.g. `node dist/bin.js`),
+// not when a test file imports it to exercise parseNodeVersion / checkNodeVersion.
+// Without this guard, `import { checkNodeVersion } from "../src/bin.js"` in a
+// vitest run would trigger main() → cmdStart() → startDaemon() and surface as
+// an unhandled promise rejection, failing the run.
+const invokedAsScript =
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  import.meta.url === `file://${process.argv[1]}`;
+
+if (invokedAsScript) {
+  main().catch((err) => {
+    process.stderr.write(
+      `fatal: ${err instanceof Error ? err.message : String(err)}\n`
+    );
+    process.exit(1);
+  });
+}

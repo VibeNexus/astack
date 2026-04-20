@@ -8,6 +8,14 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./test/setup.ts"],
+    // Playwright specs live in ./e2e and use the `.spec.ts` suffix that
+    // vitest picks up by default. Exclude them or vitest crashes on
+    // `test.describe` (incompatible between @playwright/test and vitest).
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "e2e/**"
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],

@@ -38,6 +38,13 @@ coverage/
 .nyc_output/
 *.lcov
 
+# Playwright / browser test artifacts
+.playwright-mcp/
+*.png
+packages/web/test-results/
+packages/web/playwright-report/
+packages/web/.playwright-cache/
+
 # TypeScript / build artifacts
 *.tsbuildinfo
 
