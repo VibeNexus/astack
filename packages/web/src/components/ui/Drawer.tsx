@@ -5,6 +5,7 @@ import {
   useRef,
   type PropsWithChildren
 } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Drawer primitive — right-side slide-out panel with focus trap.
@@ -140,7 +141,15 @@ export function Drawer({
 
   if (!open && !keepMounted) return null;
 
-  return (
+  // Portal to document.body so the fixed-position backdrop isn't clipped
+  // to `<main overflow-auto>`. Without this, the drawer covers main's
+  // scroll area but not the sidebar, AND — more bug-like — a scroll
+  // container ancestor can turn our `position: fixed` into something
+  // closer to absolute, letting sibling page content bleed through.
+  // Rendering at document.body gives us a true viewport-relative fixed
+  // overlay, which is what "modal drawer" actually needs.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
       // Backdrop: clicking it closes the drawer. Pointer events disabled
       // when closed+keepMounted so underlying page is interactive again.
@@ -177,7 +186,8 @@ export function Drawer({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

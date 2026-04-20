@@ -255,7 +255,7 @@ export function BrowseSkillsDrawer({
       open={open}
       onClose={onClose}
       aria-label="Browse skills"
-      width={560}
+      width={720}
     >
       <DrawerHeader title="Browse skills" onClose={onClose} />
 
@@ -404,7 +404,14 @@ function RepoGroup({
 }): React.JSX.Element {
   return (
     <section className="border-b border-line-subtle last:border-b-0">
-      <div className="sticky top-0 bg-surface-1 px-5 py-2 flex items-center gap-2 text-xs text-fg-secondary">
+      {/* Sticky repo group header.
+          - bg-overlay (opaque) so scrolling skill rows don't bleed through.
+          - z-10 puts it above the rows underneath; the drawer itself
+            owns the stacking context, so 10 is plenty.
+          - shadow-[0_1px_0] on the bottom sim-draws the border beneath
+            the sticky header, otherwise it detaches when the first row
+            scrolls under. */}
+      <div className="sticky top-0 z-10 bg-overlay border-b border-line-subtle px-5 py-2.5 flex items-center gap-2 text-xs text-fg-secondary">
         <span className="font-semibold text-fg-primary">{repo.name}</span>
         {repo.kind === "open-source" ? (
           <Badge tone="warn">read-only</Badge>
