@@ -15,6 +15,7 @@ import type { RepoService } from "../services/repo.js";
 import type { SubscriptionService } from "../services/subscription.js";
 import type { SymlinkService } from "../services/symlink.js";
 import type { SyncService } from "../services/sync.js";
+import type { SystemSkillService } from "../system-skills/service.js";
 
 export interface ServiceContainer {
   config: ServerConfig;
@@ -27,4 +28,5 @@ export interface ServiceContainer {
   subscriptionService: SubscriptionService;
   symlinkService: SymlinkService;
   syncService: SyncService;
+  systemSkillService: SystemSkillService;
 }

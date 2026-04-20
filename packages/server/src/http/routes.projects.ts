@@ -123,6 +123,35 @@ export function projectsRoutes(c: ServiceContainer): Hono {
     }
   );
 
+  // GET /api/projects/:id/harness — inspect harness-init skill state (v0.4).
+  // Pure read: no fs writes, no SSE emission, no db changes.
+  app.get(
+    "/:id/harness",
+    zValidator("param", ProjectParamsSchema),
+    async (ctx) => {
+      const { id } = ctx.req.valid("param");
+      // mustFindById on 404 before touching SystemSkillService so the
+      // error comes from the project domain, not harness domain.
+      c.projectService.mustFindById(id);
+      const state = await c.systemSkillService.inspect(id, "harness-init");
+      ctx.header("Cache-Control", "no-store");
+      return ctx.json(state);
+    }
+  );
+
+  // POST /api/projects/:id/harness/install — force re-seed (v0.4).
+  // Overwrites any local modifications. Emits harness.changed.
+  app.post(
+    "/:id/harness/install",
+    zValidator("param", ProjectParamsSchema),
+    async (ctx) => {
+      const { id } = ctx.req.valid("param");
+      c.projectService.mustFindById(id);
+      const state = await c.systemSkillService.seed(id, "harness-init");
+      return ctx.json(state);
+    }
+  );
+
   // Silence unused import warning — SubscriptionState is re-exported for
   // consumers who want to narrow on SubscriptionWithState.state values.
   void SubscriptionState;

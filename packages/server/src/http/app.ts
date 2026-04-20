@@ -28,6 +28,7 @@ import { RepoService } from "../services/repo.js";
 import { SubscriptionService } from "../services/subscription.js";
 import { SymlinkService } from "../services/symlink.js";
 import { SyncService } from "../services/sync.js";
+import { SystemSkillService } from "../system-skills/service.js";
 
 import type { ServiceContainer } from "./container.js";
 import { buildErrorHandler } from "./errors.js";
@@ -61,12 +62,21 @@ export function createApp(opts: CreateAppOptions): AppInstance {
   const events = new EventBus();
   const locks = new LockManager({ timeoutMs: opts.config.repoLockTimeoutMs });
 
+  // Forward-declare holder so RepoService's systemSkillIds provider can
+  // read from the SystemSkillService once it's constructed, without
+  // introducing a circular DI. See v0.4 spec §A9.
+  let systemSkillServiceRef: SystemSkillService | null = null;
+
   const repoService = new RepoService({
     db,
     config: opts.config,
     events,
     locks,
-    logger: opts.logger
+    logger: opts.logger,
+    systemSkillIds: () => {
+      if (!systemSkillServiceRef) return new Set<string>();
+      return new Set(systemSkillServiceRef.list().map((s) => s.id));
+    }
   });
   const projectService = new ProjectService({
     db,
@@ -100,6 +110,16 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     }
   });
 
+  // Construct last: subscribes to project.registered events (see service.ts).
+  // Must come after ProjectService (dependency) but before the container is
+  // exposed so routes can call into it.
+  const systemSkillService = new SystemSkillService({
+    events,
+    logger: opts.logger,
+    projects: projectService
+  });
+  systemSkillServiceRef = systemSkillService;
+
   const container: ServiceContainer = {
     config: opts.config,
     db,
@@ -110,7 +130,8 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     projectService,
     subscriptionService,
     symlinkService,
-    syncService
+    syncService,
+    systemSkillService
   };
 
   const app = new Hono();
