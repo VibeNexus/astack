@@ -50,6 +50,17 @@ export {
   type SeedServiceDeps,
   type SeedSummary
 } from "./services/seed.js";
+export {
+  SystemSkillService,
+  safeLog,
+  type SystemSkillServiceDeps
+} from "./system-skills/service.js";
+export { systemSkillsRoot } from "./system-skills/paths.js";
+export {
+  SYSTEM_SKILLS,
+  SYSTEM_SKILL_IDS,
+  type SystemSkillDescriptor
+} from "./system-skills/registry.js";
 export { BUILTIN_SEEDS, isBuiltinSeedUrl, type BuiltinSeed } from "./seeds.js";
 export {
   AstackManifestSchema,
