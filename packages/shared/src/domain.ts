@@ -97,6 +97,24 @@ export const ToolLinkStatus = {
 } as const;
 export type ToolLinkStatus = (typeof ToolLinkStatus)[keyof typeof ToolLinkStatus];
 
+/**
+ * Why a tool link is broken. Only meaningful when `status === "broken"`.
+ *
+ *   - "target_missing"    — symlink exists but the target path is gone
+ *   - "not_a_symlink"     — the entry at dir_name is a regular file/dir, not a symlink
+ *   - "permission_denied" — could not `lstat` the entry (EACCES / EPERM)
+ *
+ * Derived at query time (`fs.readlinkSync` + `fs.statSync`), never persisted.
+ * Added in v0.3 for the Linked Tools tab's "why broken" UI.
+ */
+export const ToolLinkBrokenReason = {
+  TargetMissing: "target_missing",
+  NotASymlink: "not_a_symlink",
+  PermissionDenied: "permission_denied"
+} as const;
+export type ToolLinkBrokenReason =
+  (typeof ToolLinkBrokenReason)[keyof typeof ToolLinkBrokenReason];
+
 /** Conflict resolution strategy (see design.md Implementation TODO #1). */
 export const ResolveStrategy = {
   KeepLocal: "keep-local",
@@ -299,6 +317,17 @@ export interface ToolLink {
   /** Dir name under project root, e.g. ".cursor". */
   dir_name: string;
   status: ToolLinkStatus;
+  /**
+   * Resolved absolute target path of the symlink, when one can be read.
+   * `null` for rows where the entry isn't a symlink or can't be inspected.
+   * Derived at query time via `fs.readlinkSync` — never persisted. Added in v0.3.
+   */
+  target_path: string | null;
+  /**
+   * Why the link is broken. Only meaningful when `status === "broken"`.
+   * `null` for active / removed rows. Derived at query time. Added in v0.3.
+   */
+  broken_reason: ToolLinkBrokenReason | null;
   created_at: IsoDateTime;
 }
 

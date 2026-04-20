@@ -7,6 +7,7 @@
  *   DELETE /api/projects/:id               — unregister
  *   GET    /api/projects/:id/status        — sync state view
  *   GET    /api/projects/:id/diff/:skill_id — local vs upstream diff
+ *   GET    /api/projects/:id/sync-logs     — history feed (v0.3)
  */
 
 import { z } from "zod";
@@ -16,7 +17,10 @@ import {
   NonEmptyStringSchema,
   PaginationSchema,
   ProjectSchema,
-  ProjectStatusSchema
+  ProjectStatusSchema,
+  SyncDirectionSchema,
+  SyncLogSchema,
+  SyncStatusSchema
 } from "./common.js";
 
 // ---------- POST /api/projects ----------
@@ -87,3 +91,30 @@ export const GetSkillDiffResponseSchema = z.object({
   working_version: z.string().nullable()
 });
 export type GetSkillDiffResponse = z.infer<typeof GetSkillDiffResponseSchema>;
+
+// ---------- GET /api/projects/:id/sync-logs (v0.3) ----------
+
+/**
+ * Query params for the sync history feed.
+ *
+ * All filters optional; unfiltered call returns last 50 logs across all
+ * skills in the project. `limit` capped at 200 to protect SQLite (much
+ * higher than the default 50 because users may want a 30-day audit and
+ * a busy project sees ~10 logs/day → 300+ rows).
+ */
+export const ListSyncLogsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  offset: z.coerce.number().int().nonnegative().default(0),
+  skill_id: z.coerce.number().int().positive().optional(),
+  direction: SyncDirectionSchema.optional(),
+  status: SyncStatusSchema.optional()
+});
+export type ListSyncLogsQuery = z.infer<typeof ListSyncLogsQuerySchema>;
+
+export const ListSyncLogsResponseSchema = z.object({
+  logs: z.array(SyncLogSchema),
+  total: z.number().int().nonnegative(),
+  /** True when (offset + logs.length) < total — there are older logs. */
+  has_more: z.boolean()
+});
+export type ListSyncLogsResponse = z.infer<typeof ListSyncLogsResponseSchema>;

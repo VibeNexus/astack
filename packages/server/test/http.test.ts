@@ -412,6 +412,55 @@ describe("HTTP API", () => {
     });
   });
 
+  // v0.3 PR4 — batch subscribe partial-success contract
+  describe("POST /subscriptions (batch partial success)", () => {
+    it("mixed success/failure → HTTP 201 with failures[] populated", async () => {
+      await bare.addCommitPush("commands/code_review.md", "v1", "init");
+      await request(app, "POST", "/api/repos", { git_url: bare.url });
+      const proj = await request<{ project: { id: number } }>(
+        app,
+        "POST",
+        "/api/projects",
+        { path: projectDir.path }
+      );
+
+      const res = await request<{
+        subscriptions: unknown[];
+        failures: Array<{ ref: string; code: string; message: string }>;
+        sync_logs: unknown[];
+      }>(app, "POST", `/api/projects/${proj.json.project.id}/subscriptions`, {
+        skills: ["code_review", "does-not-exist"],
+        sync_now: false
+      });
+
+      // 201 because at least one subscription was created.
+      expect(res.status).toBe(201);
+      expect(res.json.subscriptions).toHaveLength(1);
+      expect(res.json.failures).toHaveLength(1);
+      expect(res.json.failures[0]).toMatchObject({
+        ref: "does-not-exist",
+        code: ErrorCode.SKILL_NOT_FOUND
+      });
+    });
+
+    it("all refs fail → HTTP 200 with subscriptions=[], failures has all", async () => {
+      await request(app, "POST", "/api/projects", { path: projectDir.path });
+
+      const res = await request<{
+        subscriptions: unknown[];
+        failures: Array<{ ref: string; code: string }>;
+      }>(app, "POST", `/api/projects/1/subscriptions`, {
+        skills: ["nope-1", "nope-2"],
+        sync_now: false
+      });
+
+      // 200 — not a protocol error, just zero successful subs.
+      expect(res.status).toBe(200);
+      expect(res.json.subscriptions).toEqual([]);
+      expect(res.json.failures).toHaveLength(2);
+    });
+  });
+
   describe("skill type enum sanity", () => {
     it("SkillType.Skill matches what the scanner returns", async () => {
       await bare.addCommitPush(

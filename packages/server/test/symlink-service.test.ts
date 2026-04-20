@@ -197,4 +197,100 @@ describe("SymlinkService", () => {
       );
     });
   });
+
+  // v0.3: target_path + broken_reason enrichment
+  describe("ToolLink enrichment", () => {
+    it("active link exposes absolute target_path and null broken_reason", () => {
+      const project = h.projectService.register({ path: h.projectDir.path });
+      const link = h.symlinkService.addLink({
+        project_id: project.id,
+        tool_name: "cursor"
+      });
+      expect(link.status).toBe(ToolLinkStatus.Active);
+      expect(link.broken_reason).toBeNull();
+      // target_path is derived from `commands/` (first subdir). readlink
+      // returned `../.claude/commands`; we resolve relative to the symlink's
+      // parent so the consumer sees an absolute path.
+      expect(link.target_path).toBe(
+        path.join(h.projectDir.path, ".claude", "commands")
+      );
+    });
+
+    it("broken_reason=target_missing when the target dir vanishes", () => {
+      const project = h.projectService.register({ path: h.projectDir.path });
+      h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
+      // Delete the primary .claude/ dir (both subdirs).
+      fs.rmSync(path.join(h.projectDir.path, ".claude"), {
+        recursive: true,
+        force: true
+      });
+
+      const links = h.symlinkService.list(project.id);
+      expect(links[0]?.status).toBe(ToolLinkStatus.Broken);
+      expect(links[0]?.broken_reason).toBe("target_missing");
+      // target_path still reports where the link WANTED to go — helps UX
+      // (we can say "→ <path> (missing!)").
+      expect(links[0]?.target_path).toBe(
+        path.join(h.projectDir.path, ".claude", "commands")
+      );
+    });
+
+    it("broken_reason=not_a_symlink when the entry is a real directory", () => {
+      const project = h.projectService.register({ path: h.projectDir.path });
+      h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
+      // Replace the commands symlink with a real dir.
+      fs.unlinkSync(path.join(h.projectDir.path, ".cursor/commands"));
+      fs.mkdirSync(path.join(h.projectDir.path, ".cursor/commands"));
+
+      const links = h.symlinkService.list(project.id);
+      expect(links[0]?.status).toBe(ToolLinkStatus.Broken);
+      expect(links[0]?.broken_reason).toBe("not_a_symlink");
+      // target_path falls back to the OTHER subdir (skills/) which is
+      // still a healthy symlink — showing users *something* is better
+      // than null when one side works.
+      expect(links[0]?.target_path).toBe(
+        path.join(h.projectDir.path, ".claude", "skills")
+      );
+    });
+
+    it("status=removed + broken_reason=null when both subdirs are gone", () => {
+      const project = h.projectService.register({ path: h.projectDir.path });
+      h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
+      // Remove the whole .cursor dir — both subdirs now missing.
+      fs.rmSync(path.join(h.projectDir.path, ".cursor"), {
+        recursive: true,
+        force: true
+      });
+
+      const links = h.symlinkService.list(project.id);
+      expect(links[0]?.status).toBe(ToolLinkStatus.Removed);
+      expect(links[0]?.broken_reason).toBeNull();
+      expect(links[0]?.target_path).toBeNull();
+    });
+
+    it("reconcile emits ToolLinkBroken event with enriched payload", () => {
+      const project = h.projectService.register({ path: h.projectDir.path });
+      h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
+      fs.rmSync(path.join(h.projectDir.path, ".claude"), {
+        recursive: true,
+        force: true
+      });
+
+      const before = h.emitted.length;
+      h.symlinkService.reconcile(project.id);
+      const brokenEvent = h.emitted
+        .slice(before)
+        .find((e) => e.event.type === EventType.ToolLinkBroken);
+      expect(brokenEvent).toBeDefined();
+      const link = (
+        brokenEvent!.event.payload as unknown as {
+          link: { broken_reason: string | null; target_path: string | null };
+        }
+      ).link;
+      expect(link.broken_reason).toBe("target_missing");
+      expect(link.target_path).toBe(
+        path.join(h.projectDir.path, ".claude", "commands")
+      );
+    });
+  });
 });

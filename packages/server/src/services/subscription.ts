@@ -246,6 +246,76 @@ export class SubscriptionService {
   }
 
   /**
+   * Batch subscribe with per-ref partial success semantics.
+   *
+   * v0.3: the main Web "Browse Skills" drawer calls this with 10+ refs at
+   * once. Pre-v0.3, any single failure rolled the whole request back (HTTP
+   * 500). That was strictly worse — users lost the 9 successful subs they
+   * already picked when one ref collided with an existing subscription.
+   *
+   * New contract:
+   *   - Every ref is attempted independently (try/catch per ref).
+   *   - Successes are committed immediately (DB + manifest) — failures on
+   *     later refs do NOT undo earlier successes.
+   *   - Failures collect the structured AstackError code + message so the
+   *     client can render per-row errors.
+   *   - The caller decides HTTP status (200 for partial success, not 4xx).
+   *
+   * `opts.pinned_version` only applies when `refs.length === 1`; the
+   * validator should enforce this (SubscribeRequestSchema does).
+   */
+  subscribeBatch(
+    projectId: number,
+    refs: string[],
+    opts: {
+      type?: SkillTypeT;
+      pinned_version?: string;
+    } = {}
+  ): {
+    subscriptions: Subscription[];
+    skills: Skill[];
+    failures: Array<{ ref: string; code: string; message: string }>;
+  } {
+    // Resolve project once at the top — it's a required-404 for the whole
+    // batch. A bad projectId isn't a per-ref failure.
+    this.deps.projects.mustFindById(projectId);
+
+    const subscriptions: Subscription[] = [];
+    const skills: Skill[] = [];
+    const failures: Array<{ ref: string; code: string; message: string }> = [];
+
+    for (const ref of refs) {
+      try {
+        const res = this.subscribe(projectId, ref, {
+          type: opts.type,
+          // pinned_version is only meaningful for single-ref; we pass it
+          // through unconditionally here and let the caller's validator
+          // have rejected length-mismatched input upstream.
+          pinned_version:
+            refs.length === 1 ? opts.pinned_version : undefined
+        });
+        subscriptions.push(res.subscription);
+        skills.push(res.skill);
+      } catch (err) {
+        if (err instanceof AstackError) {
+          failures.push({ ref, code: err.code, message: err.message });
+          this.deps.logger.warn("subscribe.ref_failed", {
+            project_id: projectId,
+            ref,
+            code: err.code
+          });
+          continue;
+        }
+        // Unknown (non-Astack) error is genuinely unexpected — bail so
+        // we surface the bug instead of swallowing it into failures[].
+        throw err;
+      }
+    }
+
+    return { subscriptions, skills, failures };
+  }
+
+  /**
    * Remove a subscription. Returns true if a row was deleted.
    * Manifest rewritten if a subscription actually went away.
    */
@@ -324,7 +394,7 @@ export class SubscriptionService {
     const project = this.deps.projects.mustFindById(projectId);
     const existing = readManifest(project.path, project.primary_tool);
 
-    const tool_links = this.deps.projects.listToolLinks(projectId);
+    const tool_links = this.deps.projects.listToolLinkRows(projectId);
     const rows = this.subs.listByProject(projectId);
 
     const subs: NormalizedSubscription[] = [];

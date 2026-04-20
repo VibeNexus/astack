@@ -140,11 +140,18 @@ export class ProjectService {
    * Dashboard's Sync Status page.
    *
    * Returns a skeleton ProjectStatus; SubscriptionService fills in the
-   * `subscriptions` array (this service can't compute sync state alone).
+   * `subscriptions` array, and SymlinkService provides enriched
+   * `tool_links` (with target_path + broken_reason) via the route layer.
+   *
+   * v0.3: callers pass `tool_links` because SymlinkService owns the
+   * filesystem-derived fields (target_path, broken_reason) that the repo
+   * layer alone can't produce.
    */
-  buildStatusSkeleton(projectId: number): Omit<ProjectStatus, "subscriptions"> {
+  buildStatusSkeleton(
+    projectId: number,
+    tool_links: ToolLink[]
+  ): Omit<ProjectStatus, "subscriptions"> {
     const project = this.mustFindById(projectId);
-    const tool_links = this.toolLinks.listByProject(projectId);
     return {
       project,
       tool_links,
@@ -152,22 +159,36 @@ export class ProjectService {
     };
   }
 
-  /** Helper for services that need raw tool links list. */
-  listToolLinks(projectId: number): ToolLink[] {
+  /**
+   * Raw tool_link rows straight from the DB. Callers who only need
+   * identity (id, tool_name, dir_name) can use this; anything that wants
+   * the live filesystem state (`target_path`, `broken_reason`, accurate
+   * `status`) must go through SymlinkService.list() instead.
+   */
+  listToolLinkRows(projectId: number): Array<{
+    id: number;
+    project_id: number;
+    tool_name: string;
+    dir_name: string;
+    status: ToolLink["status"];
+    created_at: ToolLink["created_at"];
+  }> {
     return this.toolLinks.listByProject(projectId);
   }
 
   /**
    * Exposed so callers (e.g. status endpoint) can compose complete
    * ProjectStatus without re-fetching. Service caller is responsible for
-   * computing the sync state per subscription.
+   * computing the sync state per subscription and for supplying
+   * filesystem-enriched tool_links (via SymlinkService).
    */
   composeStatus(
     projectId: number,
     subscriptions: SubscriptionWithState[],
+    tool_links: ToolLink[],
     last_synced: string | null
   ): ProjectStatus {
-    const skeleton = this.buildStatusSkeleton(projectId);
+    const skeleton = this.buildStatusSkeleton(projectId, tool_links);
     return {
       project: skeleton.project,
       tool_links: skeleton.tool_links,

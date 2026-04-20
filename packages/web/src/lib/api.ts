@@ -22,6 +22,8 @@ import {
   type ListProjectsResponse,
   type ListRepoSkillsResponse,
   type ListReposResponse,
+  type ListSyncLogsQuery,
+  type ListSyncLogsResponse,
   type FsListResponse,
   type PushResponse,
   type RefreshRepoResponse,
@@ -128,6 +130,23 @@ export const api = {
     request("DELETE", `/api/projects/${id}`),
   projectStatus: (id: number): Promise<GetProjectStatusResponse> =>
     request("GET", `/api/projects/${id}/status`),
+
+  // Sync history feed (v0.3). Powers the Sync History tab.
+  listSyncLogs: (
+    projectId: number,
+    q: ListSyncLogsQuery | Record<string, never> = {}
+  ): Promise<ListSyncLogsResponse> => {
+    // ListSyncLogsQuery has optional fields + numeric defaults; pass
+    // through only defined keys to keep the URL clean.
+    const params: Record<string, string> = {};
+    const src = q as Partial<ListSyncLogsQuery>;
+    if (src.limit !== undefined) params.limit = String(src.limit);
+    if (src.offset !== undefined) params.offset = String(src.offset);
+    if (src.skill_id !== undefined) params.skill_id = String(src.skill_id);
+    if (src.direction !== undefined) params.direction = src.direction;
+    if (src.status !== undefined) params.status = src.status;
+    return request("GET", `/api/projects/${projectId}/sync-logs${qs(params)}`);
+  },
 
   // Filesystem navigation (powers path autocomplete in Register Project).
   fsList: (

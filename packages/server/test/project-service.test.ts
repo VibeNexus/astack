@@ -117,7 +117,7 @@ describe("ProjectService", () => {
   describe("composeStatus", () => {
     it("builds a ProjectStatus skeleton with zero subscriptions", () => {
       const project = service.register({ path: projectDir.path });
-      const status = service.composeStatus(project.id, [], null);
+      const status = service.composeStatus(project.id, [], [], null);
       expect(status.project.id).toBe(project.id);
       expect(status.subscriptions).toEqual([]);
       expect(status.tool_links).toEqual([]);
@@ -147,16 +147,16 @@ describe("ProjectService", () => {
   describe("buildStatusSkeleton", () => {
     it("returns an empty tool_links list when none configured", () => {
       const project = service.register({ path: projectDir.path });
-      const skeleton = service.buildStatusSkeleton(project.id);
+      const skeleton = service.buildStatusSkeleton(project.id, []);
       expect(skeleton.project.id).toBe(project.id);
       expect(skeleton.tool_links).toEqual([]);
     });
   });
 
-  describe("listToolLinks", () => {
+  describe("listToolLinkRows", () => {
     it("returns [] initially", () => {
       const project = service.register({ path: projectDir.path });
-      expect(service.listToolLinks(project.id)).toEqual([]);
+      expect(service.listToolLinkRows(project.id)).toEqual([]);
     });
   });
 

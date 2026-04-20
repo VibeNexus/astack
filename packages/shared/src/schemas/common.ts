@@ -13,6 +13,7 @@ import {
   SubscriptionState,
   SyncDirection,
   SyncStatus,
+  ToolLinkBrokenReason,
   ToolLinkStatus
 } from "../domain.js";
 
@@ -70,6 +71,11 @@ export const ToolLinkStatusSchema = z.enum([
   ToolLinkStatus.Active,
   ToolLinkStatus.Broken,
   ToolLinkStatus.Removed
+]);
+export const ToolLinkBrokenReasonSchema = z.enum([
+  ToolLinkBrokenReason.TargetMissing,
+  ToolLinkBrokenReason.NotASymlink,
+  ToolLinkBrokenReason.PermissionDenied
 ]);
 export const ResolveStrategySchema = z.enum([
   ResolveStrategy.KeepLocal,
@@ -178,6 +184,8 @@ export const ToolLinkSchema = z.object({
   tool_name: NonEmptyStringSchema,
   dir_name: NonEmptyStringSchema,
   status: ToolLinkStatusSchema,
+  target_path: z.string().nullable(),
+  broken_reason: ToolLinkBrokenReasonSchema.nullable(),
   created_at: IsoDateTimeSchema
 });
 

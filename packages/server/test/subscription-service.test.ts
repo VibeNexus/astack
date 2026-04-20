@@ -338,4 +338,81 @@ describe("SubscriptionService", () => {
       expect(m!.subscriptions).toHaveLength(1);
     });
   });
+
+  // v0.3: partial-success batch subscribe
+  describe("subscribeBatch", () => {
+    it("all refs succeed → failures=[] + all rows present", async () => {
+      const { projectId } = await seed();
+      const result = h.subscriptionService.subscribeBatch(projectId, [
+        "code_review",
+        "office-hours"
+      ]);
+      expect(result.subscriptions).toHaveLength(2);
+      expect(result.failures).toEqual([]);
+      expect(readManifest(h.projectDir.path)!.subscriptions).toHaveLength(2);
+    });
+
+    it("REGRESSION: one ref fails → partial success, manifest has the good ones", async () => {
+      const { projectId } = await seed();
+
+      const result = h.subscriptionService.subscribeBatch(projectId, [
+        "office-hours",
+        "does-not-exist" // will fail with SKILL_NOT_FOUND
+      ]);
+      expect(result.subscriptions).toHaveLength(1);
+      expect(result.subscriptions[0]?.skill_id).toBeDefined();
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0]).toMatchObject({
+        ref: "does-not-exist",
+        code: ErrorCode.SKILL_NOT_FOUND
+      });
+      // Manifest must reflect the success despite the failure — this is the
+      // whole reason we introduced partial-success in v0.3.
+      const m = readManifest(h.projectDir.path);
+      expect(m!.subscriptions).toHaveLength(1);
+      expect(m!.subscriptions[0]?.name).toBe("office-hours");
+    });
+
+    it("every ref fails → subscriptions=[], failures has full list", async () => {
+      const { projectId } = await seed();
+      const result = h.subscriptionService.subscribeBatch(projectId, [
+        "does-not-exist",
+        "also-nope"
+      ]);
+      expect(result.subscriptions).toEqual([]);
+      expect(result.failures).toHaveLength(2);
+      expect(result.failures.every((f) => f.code === ErrorCode.SKILL_NOT_FOUND)).toBe(
+        true
+      );
+    });
+
+    it("single-ref failure still returns 200-shaped output (not a throw)", async () => {
+      const { projectId } = await seed();
+      const result = h.subscriptionService.subscribeBatch(projectId, [
+        "does-not-exist"
+      ]);
+      expect(result.subscriptions).toEqual([]);
+      expect(result.failures).toHaveLength(1);
+    });
+
+    it("unknown project id throws PROJECT_NOT_FOUND (not a per-ref failure)", () => {
+      expect(() =>
+        h.subscriptionService.subscribeBatch(99999, ["code_review"])
+      ).toThrowError(
+        expect.objectContaining({ code: ErrorCode.PROJECT_NOT_FOUND })
+      );
+    });
+
+    it("pinned_version only applied when exactly one ref (batch ignores it)", async () => {
+      const { projectId } = await seed();
+      h.subscriptionService.subscribeBatch(
+        projectId,
+        ["code_review", "office-hours"],
+        { pinned_version: "abc1234" }
+      );
+      // Both rows should have pinned_version=null (batch mode discards it).
+      const subs = h.subscriptionService.listForProject(projectId);
+      expect(subs.every((s) => s.pinned_version === null)).toBe(true);
+    });
+  });
 });

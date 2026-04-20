@@ -15,7 +15,6 @@ import {
   UnsubscribeParamsSchema,
   type PushResponse,
   type SubscribeResponse,
-  type Subscription,
   type SyncResponse,
   type SyncLog,
   type ResolveResponse,
@@ -33,6 +32,12 @@ export function subscriptionsRoutes(c: ServiceContainer): Hono {
   const app = new Hono();
 
   // POST /api/projects/:id/subscriptions — subscribe to one or more skills.
+  //
+  // v0.3 semantics: partial success. Every ref is attempted independently;
+  // successes commit immediately, failures are collected and returned in
+  // the `failures` array. HTTP status is always 2xx for a well-formed
+  // request — even if every ref fails. The CLI and Web drawer both read
+  // `failures.length` to decide how to display the result.
   app.post(
     "/:id/subscriptions",
     zValidator("param", ProjectParamsSchema),
@@ -41,29 +46,34 @@ export function subscriptionsRoutes(c: ServiceContainer): Hono {
       const { id } = ctx.req.valid("param");
       const body = ctx.req.valid("json");
 
-      const subs: Subscription[] = [];
-      for (const ref of body.skills) {
-        const { subscription } = c.subscriptionService.subscribe(id, ref, {
-          type: body.type,
-          pinned_version:
-            body.skills.length === 1 ? body.pinned_version : undefined
-        });
-        subs.push(subscription);
-      }
+      const batch = c.subscriptionService.subscribeBatch(id, body.skills, {
+        type: body.type,
+        pinned_version: body.pinned_version
+      });
 
       let sync_logs: SyncLog[] = [];
-      if (body.sync_now) {
+      // Only sync the refs that actually subscribed — failed ones aren't
+      // in the DB so there's nothing to pull for them.
+      if (body.sync_now && batch.subscriptions.length > 0) {
         const result = await c.syncService.pullBatch(id, {
-          skill_ids: subs.map((s) => s.skill_id)
+          skill_ids: batch.subscriptions.map((s) => s.skill_id)
         });
         sync_logs = result.outcomes.map((o: SyncOutcome) => o.log);
       }
 
+      // Status:
+      //   201 — at least one subscription created
+      //   200 — every ref failed (nothing created, but request was valid
+      //         and we're reporting structured failures, not a protocol
+      //         error). 4xx would imply "retry the whole request", which
+      //         is exactly wrong when all failures are per-ref.
+      const status = batch.subscriptions.length > 0 ? 201 : 200;
       const response: SubscribeResponse = {
-        subscriptions: subs,
+        subscriptions: batch.subscriptions,
+        failures: batch.failures,
         sync_logs
       };
-      return ctx.json(response, 201);
+      return ctx.json(response, status);
     }
   );
 

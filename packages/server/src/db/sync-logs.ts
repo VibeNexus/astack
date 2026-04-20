@@ -117,4 +117,67 @@ export class SyncLogRepository {
       .get(project_id);
     return row?.synced_at ?? null;
   }
+
+  /**
+   * Paginated sync history for a project with optional filters.
+   *
+   * Ordered DESC on `(synced_at, id)` — newest first. Uses the composite
+   * index `(project_id, synced_at DESC, id DESC)` so pagination stays fast
+   * even at 100k+ rows.
+   *
+   * Returns the page + total row count (post-filter) so the client can
+   * render "Showing 50 of 342" and decide whether to show [Load more].
+   *
+   * Powers GET /api/projects/:id/sync-logs (v0.3 Sync History tab).
+   */
+  listForProject(
+    project_id: number,
+    filters: {
+      limit: number;
+      offset: number;
+      skill_id?: number;
+      direction?: SyncDirection;
+      status?: SyncStatus;
+    }
+  ): { logs: SyncLogRow[]; total: number } {
+    // Build WHERE + params dynamically but parameterized (no injection).
+    const where: string[] = ["project_id = ?"];
+    const whereParams: unknown[] = [project_id];
+    if (filters.skill_id !== undefined) {
+      where.push("skill_id = ?");
+      whereParams.push(filters.skill_id);
+    }
+    if (filters.direction !== undefined) {
+      where.push("direction = ?");
+      whereParams.push(filters.direction);
+    }
+    if (filters.status !== undefined) {
+      where.push("status = ?");
+      whereParams.push(filters.status);
+    }
+    const whereSql = where.join(" AND ");
+
+    // node:sqlite doesn't love variadic `.get(...args)`; we use bind-style
+    // spread via prepare().all(...params) which works consistently.
+    const totalRow = this.db
+      .prepare<unknown[], { c: number }>(
+        `SELECT COUNT(*) AS c FROM sync_logs WHERE ${whereSql}`
+      )
+      .get(...whereParams);
+    const total = totalRow?.c ?? 0;
+
+    const pageParams = [...whereParams, filters.limit, filters.offset];
+    const logs = this.db
+      .prepare<unknown[], SyncLogRow>(
+        `SELECT id, project_id, skill_id, direction, from_version,
+                to_version, status, conflict_detail, content_hash, synced_at
+         FROM sync_logs
+         WHERE ${whereSql}
+         ORDER BY synced_at DESC, id DESC
+         LIMIT ? OFFSET ?`
+      )
+      .all(...pageParams);
+
+    return { logs, total };
+  }
 }

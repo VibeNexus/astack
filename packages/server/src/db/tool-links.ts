@@ -1,12 +1,21 @@
 /**
  * ToolLink table access (.cursor/.codebuddy symlinks).
+ *
+ * DB row is a subset of the domain `ToolLink` type: `target_path` and
+ * `broken_reason` are derived at query time by SymlinkService (v0.3),
+ * so they never round-trip through this table. Storing them would
+ * introduce stale data the moment a user manually deletes a link on disk.
  */
 
 import type { ToolLink, ToolLinkStatus } from "@astack/shared";
 
 import type { Db } from "./connection.js";
 
-type ToolLinkRow = ToolLink;
+/**
+ * Persisted subset of ToolLink. The service layer enriches this into the
+ * full domain type by reading the filesystem.
+ */
+export type ToolLinkRow = Omit<ToolLink, "target_path" | "broken_reason">;
 
 export class ToolLinkRepository {
   constructor(private readonly db: Db) {}
@@ -15,7 +24,7 @@ export class ToolLinkRepository {
     project_id: number;
     tool_name: string;
     dir_name: string;
-  }): ToolLink {
+  }): ToolLinkRow {
     const row = this.db
       .prepare<[number, string, string], ToolLinkRow>(
         `INSERT INTO tool_links (project_id, tool_name, dir_name)
@@ -30,7 +39,7 @@ export class ToolLinkRepository {
   findByProjectTool(
     project_id: number,
     tool_name: string
-  ): ToolLink | null {
+  ): ToolLinkRow | null {
     return (
       this.db
         .prepare<[number, string], ToolLinkRow>(
@@ -41,7 +50,7 @@ export class ToolLinkRepository {
     );
   }
 
-  listByProject(project_id: number): ToolLink[] {
+  listByProject(project_id: number): ToolLinkRow[] {
     return this.db
       .prepare<[number], ToolLinkRow>(
         `SELECT id, project_id, tool_name, dir_name, status, created_at

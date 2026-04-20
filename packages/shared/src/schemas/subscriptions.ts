@@ -49,10 +49,36 @@ export type SubscribeRequest = z.infer<typeof SubscribeRequestSchema>;
 
 export const SubscribeResponseSchema = z.object({
   subscriptions: z.array(SubscriptionSchema),
+  /**
+   * Per-skill failures from a batch subscribe. Empty when all refs succeeded.
+   *
+   * v0.3 behavior change: a batch with partial failures returns HTTP 200
+   * with this array populated, NOT a 4xx for the whole request. The server
+   * attempts every ref, manifests the successful ones, and collects the
+   * rest here so the client can surface each failure individually
+   * (Browse Skills drawer shows per-row error). A single-skill request
+   * that fails also returns 200 with `subscriptions: []` + this array
+   * populated — clients key off `failures.length > 0`, not HTTP status.
+   *
+   * Each entry names the exact skill ref that failed plus the structured
+   * error code so the UI can branch (NAME_COLLISION vs NOT_FOUND vs
+   * AMBIGUOUS each get different visual treatment).
+   */
+  failures: z.array(
+    z.object({
+      /** The skill ref string that was requested (unchanged from input). */
+      ref: z.string(),
+      /** AstackError code, e.g. "SUBSCRIPTION_NAME_COLLISION". */
+      code: z.string(),
+      /** Human-readable message; safe to surface in UI. */
+      message: z.string()
+    })
+  ),
   /** Sync logs produced by the initial sync (empty if sync_now=false). */
   sync_logs: z.array(SyncLogSchema)
 });
 export type SubscribeResponse = z.infer<typeof SubscribeResponseSchema>;
+export type SubscribeFailure = SubscribeResponse["failures"][number];
 
 // ---------- DELETE /api/projects/:id/subscriptions/:skill_id ----------
 
