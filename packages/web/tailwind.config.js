@@ -62,6 +62,9 @@ export default {
         // Semantic. Rare. Only for warning banners + destructive actions.
         warn: "#f5b955",
         error: "#ff6369",
+        // Informational accent (distinct from the green state-accent).
+        // Used sparingly for neutral labels like repo ownership.
+        info: "#7da6ff",
 
         // Legacy aliases so we don't have to sweep every file at once.
         // New code should use the tokens above.

@@ -365,41 +365,61 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
 /**
  * Source-of-origin tag next to the repo title.
  *
- *   - "Built-in"   — one of the seeded repos that astack distributes by
- *                    default (anthropic-skills / gstack / everything-claude-code).
- *                    Matched by URL so it survives rename.
- *   - "Open source"— third-party repo the user registered themselves
- *                    (kind=open-source, not in the seed list).
- *   - (nothing)    — user's own custom repo. Default state, no tag needed.
+ * Three mutually-exclusive labels, same visual shape, different tones:
+ *   - "Built-in"    — one of our seeded repos (URL match). Green (accent).
+ *   - "Open source" — user-registered third-party repo (kind=open-source
+ *                     and not a seed). Amber (warn) — it's read-only,
+ *                     the color hints "handle with care".
+ *   - "Custom"      — user's own repo (kind=custom). Blue (info) — it's
+ *                     theirs, two-way sync enabled.
  *
- * Visual weight is deliberately light: these are labels, not status.
+ * Every repo gets exactly one tag now, so the title row always has a
+ * consistent anchor on the right of the name.
  */
-function RepoSourceTag({ repo }: { repo: SkillRepo }): React.JSX.Element | null {
+function RepoSourceTag({ repo }: { repo: SkillRepo }): React.JSX.Element {
   const isBuiltin = isBuiltinSeedUrl(repo.git_url);
   if (isBuiltin) {
-    // Slight accent tint — it's ours.
-    return (
-      <span
-        className="inline-flex items-center h-5 px-1.5 rounded-xs
-          text-[11px] font-medium tracking-wide uppercase
-          text-accent bg-accent/10 border border-accent/20"
-      >
-        Built-in
-      </span>
-    );
+    return <SourceTag label="Built-in" tone="accent" />;
   }
   if (repo.kind === "open-source") {
-    return (
-      <span
-        className="inline-flex items-center h-5 px-1.5 rounded-xs
-          text-[11px] font-medium tracking-wide uppercase
-          text-fg-secondary bg-surface-2 border border-line-subtle"
-      >
-        Open source
-      </span>
-    );
+    return <SourceTag label="Open source" tone="warn" />;
   }
-  return null;
+  return <SourceTag label="Custom" tone="info" />;
+}
+
+/**
+ * The visual shape shared by all three origin tags. Kept as a single
+ * component so "they look the same" is enforced structurally, not by
+ * copy-pasting className strings.
+ */
+function SourceTag({
+  label,
+  tone
+}: {
+  label: string;
+  tone: "accent" | "warn" | "info";
+}): React.JSX.Element {
+  // Pre-composed so Tailwind's JIT sees the full class names (it can't
+  // follow runtime string concatenation of color utilities).
+  const toneCss =
+    tone === "accent"
+      ? "text-accent bg-accent/10 border-accent/20"
+      : tone === "warn"
+        ? "text-warn bg-warn/10 border-warn/25"
+        : // info
+          "text-info bg-info/10 border-info/25";
+  return (
+    <span
+      className={
+        "inline-flex items-center h-5 px-1.5 rounded-xs " +
+        "text-[11px] font-medium tracking-wide uppercase " +
+        "border " +
+        toneCss
+      }
+    >
+      {label}
+    </span>
+  );
 }
 
 function stripGitHubPrefix(url: string): string {
