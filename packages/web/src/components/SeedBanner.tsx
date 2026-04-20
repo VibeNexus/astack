@@ -93,14 +93,14 @@ export function SeedBanner(): React.JSX.Element | null {
   return (
     <div
       role="alert"
-      className="mb-4 flex items-start gap-3 rounded border border-warn/40 bg-warn/10 px-4 py-3 text-sm"
+      className="mb-6 flex items-start gap-3 rounded-lg border border-warn/30 bg-warn/10 px-4 py-3 text-sm"
     >
       <span aria-hidden className="mt-0.5 select-none text-warn">
         ⚠
       </span>
       <div className="flex-1">
-        <p className="font-medium text-text-primary">{heading}</p>
-        <p className="mt-1 text-text-muted">
+        <p className="font-medium text-fg-primary">{heading}</p>
+        <p className="mt-1 text-fg-secondary">
           Could not clone: {failedNames.join(", ")}. Check your network, then
           restart the daemon to retry, or register the repo manually.
         </p>
@@ -109,7 +109,7 @@ export function SeedBanner(): React.JSX.Element | null {
         type="button"
         onClick={dismiss}
         aria-label="Dismiss"
-        className="text-text-muted hover:text-text-primary"
+        className="text-fg-tertiary hover:text-fg-primary transition-colors"
       >
         ×
       </button>

@@ -1,12 +1,17 @@
 /**
  * Tailwind config for @astack/web.
  *
- * Design tokens mirror docs/asset/design.md § Design Review decision 4
- * (Dark-first tool feel, Linear × Vercel × GitHub):
- *   - single accent color (green = healthy)
- *   - semantic colors red (conflict) / yellow (behind)
- *   - 4px radius (not bubbly 12px)
- *   - Geist Sans / Geist Mono fonts
+ * Design system: Graphite UI (v0.3).
+ * "Precision instrument, not a poster."
+ *
+ * Core ideas:
+ *   - Surfaces use translucent white overlays on a near-black canvas,
+ *     not opaque dark greys. Gives real depth on any LCD.
+ *   - Single accent (green) reserved for state. No other color.
+ *   - Typography hierarchy does the work normally done by color + badges.
+ *   - Spacing is non-uniform (12/20/24/32, not 16/16/16).
+ *
+ * See the proposal in docs/version/v0.2-*.md → design redesign.
  */
 
 /** @type {import('tailwindcss').Config} */
@@ -16,69 +21,113 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Base surfaces (dark theme).
-        // Contrast ramp: base → surface → elevated should be visibly
-        // distinct on common LCDs (not just on calibrated OLED). The
-        // original Linear-inspired values (#0b0d10/#14171c) only had
-        // ~1.2:1 surface-vs-base luminance ratio and cards faded into
-        // the page background. Bumped surface/elevated one stop so
-        // cards read as cards and the 1px border is visible.
-        base: "#0b0d10",
-        surface: "#1b2028",
-        elevated: "#242a34",
-        border: "#3a414d",
+        // Canvas = the page itself. Single value, no ramp.
+        canvas: "#0a0b0d",
 
-        // Text ramp. Bumped one notch brighter than the original spec
-        // (#e5e7eb / #9ca3af / #6b7280) after user feedback that section
-        // titles and form text were hard to read on the deep #0b0d10 base.
-        // These track with Tailwind's gray-100/400/500 and give us better
-        // contrast while staying within the dark-first aesthetic.
-        "text-primary": "#f3f4f6",
-        "text-secondary": "#d1d5db",
-        "text-muted": "#9ca3af",
-
-        // Accent + semantic.
-        accent: {
-          DEFAULT: "#10b981",
-          hover: "#059669",
-          muted: "#064e3b"
+        // Surface ramp. Implemented as translucent white overlays so every
+        // surface benefits from the canvas below it. This reads as depth
+        // on any LCD, not just calibrated OLED.
+        surface: {
+          1: "rgba(255, 255, 255, 0.025)", // cards
+          2: "rgba(255, 255, 255, 0.04)",  // card hover / expanded area
+          3: "rgba(255, 255, 255, 0.06)"   // modal / popover
         },
-        warn: "#f59e0b",
-        error: "#ef4444"
+
+        // Border ramp. Very subtle by default — a hint, not a wall.
+        line: {
+          subtle: "rgba(255, 255, 255, 0.06)",
+          DEFAULT: "rgba(255, 255, 255, 0.10)",
+          strong: "rgba(255, 255, 255, 0.16)"
+        },
+
+        // Foreground ramp. Four distinct tiers; hierarchy is done here
+        // instead of with color.
+        fg: {
+          primary: "#f2f3f5",
+          secondary: "#a8acb4",
+          tertiary: "#6b7079",
+          quaternary: "#474a52"
+        },
+
+        // Single accent. Used for state (healthy / primary action) only.
+        // Brighter than #10b981 so it reads as a pro-app green, not a
+        // web-form success toast.
+        accent: {
+          DEFAULT: "#3dd68c",
+          hover: "#55e09a",
+          muted: "rgba(61, 214, 140, 0.12)",
+          fg: "#003b1c"
+        },
+
+        // Semantic. Rare. Only for warning banners + destructive actions.
+        warn: "#f5b955",
+        error: "#ff6369",
+
+        // Legacy aliases so we don't have to sweep every file at once.
+        // New code should use the tokens above.
+        base: "#0a0b0d",
+        elevated: "rgba(255, 255, 255, 0.04)",
+        border: "rgba(255, 255, 255, 0.10)",
+        "text-primary": "#f2f3f5",
+        "text-secondary": "#a8acb4",
+        "text-muted": "#6b7079"
       },
+
       fontFamily: {
+        // SF Pro first on macOS, Inter as cross-platform fallback.
         sans: [
-          "Geist Sans",
-          "Inter Display",
-          "system-ui",
           "-apple-system",
+          "SF Pro Display",
+          "SF Pro Text",
+          "Inter",
+          "system-ui",
           "sans-serif"
         ],
-        mono: ["Geist Mono", "JetBrains Mono", "ui-monospace", "monospace"]
+        // SF Mono is installed on every Mac. Geist Mono as a good fallback.
+        mono: [
+          "ui-monospace",
+          "SF Mono",
+          "Geist Mono",
+          "JetBrains Mono",
+          "monospace"
+        ]
       },
+
+      // Five-step scale. Anything outside this list is probably a mistake.
       fontSize: {
-        xs: ["12px", "16px"],
-        sm: ["13px", "18px"],
-        base: ["14px", "20px"],
-        lg: ["16px", "24px"],
-        xl: ["20px", "28px"],
-        "2xl": ["24px", "32px"],
-        "3xl": ["32px", "40px"]
+        xs: ["11px", { lineHeight: "16px", letterSpacing: "0.01em" }],
+        sm: ["13px", { lineHeight: "20px" }],
+        base: ["14px", { lineHeight: "22px" }],
+        lg: ["17px", { lineHeight: "24px", letterSpacing: "-0.003em" }],
+        xl: ["22px", { lineHeight: "28px", letterSpacing: "-0.01em" }],
+        "2xl": ["28px", { lineHeight: "34px", letterSpacing: "-0.015em" }]
       },
+
       borderRadius: {
-        DEFAULT: "4px",
-        xs: "2px",
+        DEFAULT: "6px",
+        xs: "3px",
         sm: "4px",
         md: "6px",
-        lg: "8px"
+        lg: "10px",
+        xl: "14px"
       },
+
       spacing: {
-        "sidebar-w": "240px",
-        "content-max": "1400px"
+        "sidebar-w": "232px",
+        "content-max": "1200px"
       },
+
       transitionDuration: {
-        fast: "150ms",
-        default: "200ms"
+        fast: "120ms",
+        DEFAULT: "180ms",
+        slow: "240ms"
+      },
+
+      transitionTimingFunction: {
+        // Apple-ish ease. Standard cubic-bezier for "motion should feel
+        // physical, not CSS-linear".
+        DEFAULT: "cubic-bezier(0.4, 0, 0.2, 1)",
+        out: "cubic-bezier(0.16, 1, 0.3, 1)"
       }
     }
   },

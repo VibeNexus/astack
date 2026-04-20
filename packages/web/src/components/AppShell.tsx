@@ -105,14 +105,14 @@ export function AppShell(): React.JSX.Element {
   }, [navigate, refreshBadges]);
 
   return (
-    <div className="flex h-full min-w-[1280px]">
+    <div className="flex h-full bg-canvas min-w-[960px]">
       <Sidebar badges={badges} />
       <main
         className="flex-1 overflow-auto"
         role="main"
         aria-label="Main content"
       >
-        <div className="max-w-content-max mx-auto px-6 py-6">
+        <div className="max-w-content-max mx-auto px-8 pt-10 pb-16">
           <SeedBanner />
           <Outlet />
         </div>

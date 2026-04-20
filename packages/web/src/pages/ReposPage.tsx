@@ -1,30 +1,47 @@
 import type * as React from "react";
 /**
- * Repos page — list + register + remove + refresh skill repositories.
+ * Repos page — Graphite UI v0.3.
  *
- * Each card is expandable: click to load the full skill list (grouped
- * by type: skills / commands / agents). Type counts are derived from
- * the list and memoized per repo.
+ * Card anatomy:
+ *   ┌──────────────────────────────────────────────────────┐
+ *   │  anthropic-skills                               ⋯    │
+ *   │  ○ read-only  ·  17 skills                           │
+ *   │                                                      │
+ *   │  github.com/anthropics/skills                        │
+ *   │  2c7ec5e · synced 2h ago                             │
+ *   └──────────────────────────────────────────────────────┘
+ *
+ *  - Entire card is the expand affordance (click anywhere).
+ *  - Actions move into a ⋯ menu (Refresh / Remove) so the card
+ *    header stays clean.
+ *  - Status shown as dot + inline text, not pills.
  */
 
 import type { RepoKind, Skill, SkillRepo } from "@astack/shared";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent
+} from "react";
 import { useSearchParams } from "react-router-dom";
 
 import {
-  Badge,
   Button,
   Card,
   EmptyState,
-  Skeleton
+  IconButton,
+  InlineTag,
+  Skeleton,
+  StatusDot
 } from "../components/ui.js";
 import { api, AstackError } from "../lib/api.js";
 import { relativeTime, shortHash } from "../lib/format.js";
 import { useEventListener } from "../lib/sse.js";
 import { useToast } from "../lib/toast.js";
 
-/** Grouped skills for one repo. */
-interface RepoSkills {
+interface RepoSkillsState {
   loading: boolean;
   skills: Skill[];
   error?: string;
@@ -33,9 +50,9 @@ interface RepoSkills {
 export function ReposPage(): React.JSX.Element {
   const [repos, setRepos] = useState<SkillRepo[] | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [skillsByRepo, setSkillsByRepo] = useState<Map<number, RepoSkills>>(
-    new Map()
-  );
+  const [skillsByRepo, setSkillsByRepo] = useState<
+    Map<number, RepoSkillsState>
+  >(new Map());
   const [params, setParams] = useSearchParams();
   const showDialog = params.get("action") === "new";
   const toast = useToast();
@@ -57,14 +74,10 @@ export function ReposPage(): React.JSX.Element {
     void load();
   }, [load]);
 
-  // Load skills for every repo up front so we can show counts on each card
-  // without requiring the user to expand first. The endpoint is cheap
-  // (in-memory SELECT) and there are typically <10 repos.
+  // Eagerly fetch skill lists so counts are ready on first render.
   useEffect(() => {
     if (!repos) return;
     for (const r of repos) {
-      // Skip if we already have a state for this repo (avoids re-fetch on
-      // every list refresh unless explicitly invalidated).
       if (skillsByRepo.has(r.id)) continue;
       void fetchSkills(r.id);
     }
@@ -103,7 +116,6 @@ export function ReposPage(): React.JSX.Element {
   useEventListener("repo.registered", () => void load());
   useEventListener("repo.refreshed", (e) => {
     void load();
-    // Re-fetch this repo's skill list so counts update.
     void fetchSkills(e.payload.repo.id);
   });
   useEventListener("repo.removed", (e) => {
@@ -124,9 +136,7 @@ export function ReposPage(): React.JSX.Element {
     try {
       const res = await api.refreshRepo(id);
       toast.ok(
-        res.changed
-          ? `Repo refreshed — HEAD moved`
-          : "Repo refreshed — no changes"
+        res.changed ? "Repo refreshed — HEAD moved" : "Repo up to date"
       );
       await load();
       void fetchSkills(id);
@@ -142,7 +152,7 @@ export function ReposPage(): React.JSX.Element {
     if (!confirm(`Remove repo "${repo.name}"?`)) return;
     try {
       await api.deleteRepo(repo.id);
-      toast.ok(`Removed repo '${repo.name}'`);
+      toast.ok(`Removed ${repo.name}`);
       await load();
     } catch (err) {
       toast.error(
@@ -152,7 +162,7 @@ export function ReposPage(): React.JSX.Element {
     }
   }
 
-  function toggleExpanded(id: number): void {
+  function toggle(id: number): void {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -162,26 +172,30 @@ export function ReposPage(): React.JSX.Element {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-end justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Repos</h1>
-        <Button
-          variant="primary"
-          onClick={() => setParams({ action: "new" })}
-        >
+    <div className="space-y-7">
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-fg-primary">
+            Repos
+          </h1>
+          <p className="mt-1 text-sm text-fg-secondary">
+            Git repositories scanned for commands, skills, and agents.
+          </p>
+        </div>
+        <Button onClick={() => setParams({ action: "new" })}>
           Register repo
         </Button>
-      </div>
+      </header>
 
       {repos === null ? (
         <div className="space-y-2">
-          <Skeleton className="h-14" />
-          <Skeleton className="h-14" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
         </div>
       ) : repos.length === 0 ? (
         <EmptyState
-          title="No repos registered"
-          hint="A skill repo is a git repository with commands/ and skills/ directories."
+          title="No repos yet"
+          hint="Register a git repository that contains skills/, commands/, or agents/ directories. Astack clones and scans it."
         >
           <Button
             variant="primary"
@@ -198,7 +212,7 @@ export function ReposPage(): React.JSX.Element {
               repo={r}
               skillsState={skillsByRepo.get(r.id)}
               expanded={expanded.has(r.id)}
-              onToggle={() => toggleExpanded(r.id)}
+              onToggle={() => toggle(r.id)}
               onRefresh={() => handleRefresh(r.id)}
               onDelete={() => handleDelete(r)}
             />
@@ -223,7 +237,7 @@ export function ReposPage(): React.JSX.Element {
 
 interface RepoCardProps {
   repo: SkillRepo;
-  skillsState: RepoSkills | undefined;
+  skillsState: RepoSkillsState | undefined;
   expanded: boolean;
   onToggle: () => void;
   onRefresh: () => void;
@@ -239,61 +253,67 @@ function RepoCard({
   onDelete
 }: RepoCardProps): React.JSX.Element {
   const counts = countByType(skillsState?.skills ?? []);
-  const hasSkills = skillsState && !skillsState.loading && skillsState.skills.length > 0;
+  const hasSkills =
+    skillsState && !skillsState.loading && skillsState.skills.length > 0;
 
   return (
-    <Card className="p-0 overflow-hidden hover:border-text-muted/40 transition-colors">
-      <div className="flex items-start justify-between gap-3 py-3 px-4">
+    <Card className="overflow-hidden">
+      <div className="relative">
+        {/* Clickable area: entire header. Uses a full-size invisible button
+            underneath so keyboard users get a proper focus target. */}
         <button
           type="button"
           onClick={onToggle}
-          className="min-w-0 flex-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
           aria-expanded={expanded}
-          aria-label={`${expanded ? "Collapse" : "Expand"} repo ${repo.name}`}
-        >
-          <div className="flex items-center gap-2">
-            <Chevron open={expanded} />
-            <span className="font-medium">{repo.name}</span>
-            <Badge tone="neutral">id {repo.id}</Badge>
-            {repo.kind === "open-source" ? (
-              <Badge tone="warn" title="Pull-only; push will be rejected">
-                read-only
-              </Badge>
-            ) : (
-              <Badge tone="accent" title="Two-way sync (pull + push)">
-                custom
-              </Badge>
-            )}
-            <CountBadges counts={counts} loading={skillsState?.loading ?? false} />
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${repo.name}`}
+          className="absolute inset-0 w-full rounded-lg focus-visible:ring-2 focus-visible:ring-accent/60"
+        />
+
+        <div className="relative pointer-events-none flex items-start justify-between gap-4 px-5 py-4">
+          {/* Title + metadata column */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Chevron open={expanded} />
+              <span className="text-lg font-semibold text-fg-primary truncate">
+                {repo.name}
+              </span>
+            </div>
+
+            <div className="mt-1 ml-[22px] flex items-center gap-3 text-xs text-fg-tertiary">
+              {repo.kind === "open-source" ? (
+                <InlineTag tone="hollow">read-only</InlineTag>
+              ) : (
+                <InlineTag tone="accent">two-way sync</InlineTag>
+              )}
+              <span className="text-fg-quaternary">·</span>
+              <SkillCounts counts={counts} loading={skillsState?.loading} />
+            </div>
+
+            <div className="mt-3 ml-[22px] text-xs font-mono text-fg-tertiary truncate">
+              {stripGitHubPrefix(repo.git_url)}
+            </div>
+            <div className="mt-0.5 ml-[22px] text-xs text-fg-tertiary tabular flex items-center gap-2">
+              <span className="font-mono text-fg-secondary">
+                {shortHash(repo.head_hash) || "—"}
+              </span>
+              <span className="text-fg-quaternary">·</span>
+              <span>synced {relativeTime(repo.last_synced)}</span>
+            </div>
           </div>
-          <div className="text-xs text-text-muted font-mono truncate mt-1">
-            {repo.git_url}
-          </div>
-          <div className="text-xs text-text-muted mt-1 flex items-center gap-3">
-            <span>
-              HEAD{" "}
-              <span className="font-mono">{shortHash(repo.head_hash)}</span>
-            </span>
-            <span>Last pulled {relativeTime(repo.last_synced)}</span>
-          </div>
-        </button>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button size="sm" onClick={onRefresh}>
-            Refresh
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onDelete}
-            className="text-error hover:text-error"
+
+          {/* Actions — pointer-events-auto so they remain clickable over
+              the invisible expand button. */}
+          <div
+            className="pointer-events-auto shrink-0"
+            onClick={(e: ReactMouseEvent) => e.stopPropagation()}
           >
-            Remove
-          </Button>
+            <RepoMenu onRefresh={onRefresh} onDelete={onDelete} />
+          </div>
         </div>
       </div>
 
       {expanded ? (
-        <div className="border-t border-border bg-base/40 px-4 py-3">
+        <div className="bg-surface-1 hairline px-5 py-5">
           {skillsState?.loading ? (
             <div className="space-y-2">
               <Skeleton className="h-4 w-40" />
@@ -307,7 +327,7 @@ function RepoCard({
           ) : hasSkills ? (
             <SkillList skills={skillsState!.skills} />
           ) : (
-            <div className="text-sm text-text-muted">
+            <div className="text-sm text-fg-secondary">
               No skills scanned from this repo.
             </div>
           )}
@@ -320,14 +340,16 @@ function RepoCard({
 function Chevron({ open }: { open: boolean }): React.JSX.Element {
   return (
     <svg
-      aria-hidden="true"
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      className={`text-text-muted transition-transform ${open ? "rotate-90" : ""}`}
+      aria-hidden
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      className={`text-fg-tertiary transition-transform duration-fast ${
+        open ? "rotate-90" : ""
+      }`}
     >
       <path
-        d="M4 2l4 4-4 4"
+        d="M5 3.5L8.5 7L5 10.5"
         stroke="currentColor"
         strokeWidth="1.5"
         fill="none"
@@ -338,7 +360,16 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
   );
 }
 
-// ---------- Counts + skill groups ----------
+function stripGitHubPrefix(url: string): string {
+  // Visual cleanup: users don't need to read the https:// or .git on
+  // every row. Keep the full url on hover via the title attr upstream.
+  return url
+    .replace(/^https?:\/\//, "")
+    .replace(/^git@/, "")
+    .replace(/\.git$/, "");
+}
+
+// ---------- Skill counts + list ----------
 
 interface TypeCounts {
   skill: number;
@@ -348,7 +379,12 @@ interface TypeCounts {
 }
 
 function countByType(skills: readonly Skill[]): TypeCounts {
-  const c: TypeCounts = { skill: 0, command: 0, agent: 0, total: skills.length };
+  const c: TypeCounts = {
+    skill: 0,
+    command: 0,
+    agent: 0,
+    total: skills.length
+  };
   for (const s of skills) {
     if (s.type === "skill") c.skill++;
     else if (s.type === "command") c.command++;
@@ -357,39 +393,36 @@ function countByType(skills: readonly Skill[]): TypeCounts {
   return c;
 }
 
-function CountBadges({
+function SkillCounts({
   counts,
   loading
 }: {
   counts: TypeCounts;
-  loading: boolean;
+  loading: boolean | undefined;
 }): React.JSX.Element {
   if (loading) {
-    return (
-      <span className="text-xs text-text-muted tabular ml-2">loading…</span>
-    );
+    return <span className="text-fg-tertiary tabular">loading…</span>;
   }
   if (counts.total === 0) {
-    return (
-      <span className="text-xs text-text-muted tabular ml-2">(empty)</span>
-    );
+    return <span className="text-fg-tertiary">empty</span>;
   }
-  // Inline count display — avoids one badge per zero-count type.
   const parts: string[] = [];
-  if (counts.skill > 0) parts.push(`${counts.skill} skill${counts.skill === 1 ? "" : "s"}`);
+  if (counts.skill > 0)
+    parts.push(`${counts.skill} skill${counts.skill === 1 ? "" : "s"}`);
   if (counts.command > 0)
     parts.push(`${counts.command} command${counts.command === 1 ? "" : "s"}`);
   if (counts.agent > 0)
     parts.push(`${counts.agent} agent${counts.agent === 1 ? "" : "s"}`);
   return (
-    <span className="text-xs text-text-secondary tabular ml-2">
-      {parts.join(" · ")}
-    </span>
+    <span className="text-fg-secondary tabular">{parts.join(" · ")}</span>
   );
 }
 
-function SkillList({ skills }: { skills: readonly Skill[] }): React.JSX.Element {
-  // Group by type, then alphabetize inside each group.
+function SkillList({
+  skills
+}: {
+  skills: readonly Skill[];
+}): React.JSX.Element {
   const groups: Record<"skill" | "command" | "agent", Skill[]> = {
     skill: [],
     command: [],
@@ -403,7 +436,7 @@ function SkillList({ skills }: { skills: readonly Skill[] }): React.JSX.Element 
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       {(["skill", "command", "agent"] as const).map((t) =>
         groups[t].length > 0 ? (
           <SkillGroup key={t} type={t} items={groups[t]} />
@@ -423,32 +456,141 @@ function SkillGroup({
   const label =
     type === "skill" ? "Skills" : type === "command" ? "Commands" : "Agents";
   return (
-    <div>
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-text-muted mb-1.5">
-        <span>{label}</span>
-        <span className="tabular">({items.length})</span>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-1">
+    <section>
+      <header className="mb-3 flex items-baseline gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
+          {label}
+        </h3>
+        <span className="text-xs tabular text-fg-quaternary">
+          {items.length}
+        </span>
+      </header>
+      {/* Two columns gives each skill + description room to breathe.
+          Three-column grid forced descriptions to collide/truncate. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3.5">
         {items.map((s) => (
-          <div
-            key={s.id}
-            className="min-w-0"
-            title={s.description ?? undefined}
-          >
-            <span className="font-mono text-sm text-text-primary">{s.name}</span>
-            {s.description ? (
-              <span className="ml-2 text-xs text-text-muted truncate">
-                — {s.description}
-              </span>
-            ) : null}
-          </div>
+          <SkillRow key={s.id} skill={s} />
         ))}
       </div>
+    </section>
+  );
+}
+
+function SkillRow({ skill }: { skill: Skill }): React.JSX.Element {
+  return (
+    <div className="min-w-0">
+      <div className="font-mono text-sm text-fg-primary">{skill.name}</div>
+      {skill.description ? (
+        <div className="mt-0.5 text-xs text-fg-tertiary leading-snug line-clamp-2">
+          {skill.description}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-// ---------- Register dialog (unchanged) ----------
+// ---------- Row menu ----------
+
+function RepoMenu({
+  onRefresh,
+  onDelete
+}: {
+  onRefresh: () => void;
+  onDelete: () => void;
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  // Close on outside click / Escape.
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent): void {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <IconButton
+        label="Actions"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+          <circle cx="3" cy="7" r="1.2" fill="currentColor" />
+          <circle cx="7" cy="7" r="1.2" fill="currentColor" />
+          <circle cx="11" cy="7" r="1.2" fill="currentColor" />
+        </svg>
+      </IconButton>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-9 z-10 min-w-[160px] py-1
+            bg-surface-3 border border-line rounded-md shadow-xl shadow-black/30
+            backdrop-blur"
+        >
+          <MenuItem
+            onClick={() => {
+              setOpen(false);
+              onRefresh();
+            }}
+          >
+            Refresh
+          </MenuItem>
+          <MenuItem
+            destructive
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            Remove
+          </MenuItem>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MenuItem({
+  children,
+  onClick,
+  destructive = false
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  destructive?: boolean;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className={[
+        "w-full text-left px-3 h-7 flex items-center text-sm",
+        destructive
+          ? "text-error hover:bg-error/10"
+          : "text-fg-primary hover:bg-surface-2"
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------- Register dialog (refined) ----------
 
 function RegisterRepoDialog({
   onClose,
@@ -489,62 +631,77 @@ function RegisterRepoDialog({
 
   return (
     <div
-      className="fixed inset-0 z-30 bg-base/60 flex items-center justify-center"
+      className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm flex items-center justify-center"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-[520px] max-w-[90vw] bg-elevated border border-border rounded p-4 space-y-3">
-        <div className="text-lg font-semibold text-text-primary">Register skill repo</div>
+      <div
+        className="w-[520px] max-w-[92vw] rounded-xl border border-line
+          bg-[#14171c] shadow-2xl shadow-black/40 p-6 space-y-5"
+      >
+        <div>
+          <div className="text-lg font-semibold text-fg-primary">
+            Register skill repo
+          </div>
+          <div className="mt-1 text-sm text-fg-secondary">
+            Astack will clone the repo and scan it for commands, skills, and
+            agents.
+          </div>
+        </div>
 
-        <label className="block text-sm">
-          <div className="text-text-secondary mb-1">Git URL</div>
+        <FieldLabel label="Git URL">
           <input
-            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent"
+            className="w-full h-9 px-3 bg-surface-1 border border-line-subtle rounded-md
+              text-sm font-mono text-fg-primary placeholder-fg-tertiary
+              focus:outline-none focus:border-accent/60 focus:bg-surface-2
+              transition-colors"
             placeholder="git@github.com:me/skills.git"
             value={gitUrl}
             onChange={(e) => setGitUrl(e.target.value)}
             disabled={busy}
             autoFocus
           />
-        </label>
+        </FieldLabel>
 
-        <div className="block text-sm">
-          <div className="text-text-secondary mb-1.5">Repo type</div>
+        <FieldLabel label="Repo type">
           <div className="grid grid-cols-2 gap-2">
             <KindOption
               selected={kind === "custom"}
               onClick={() => !busy && setKind("custom")}
               title="Custom"
-              tag="two-way"
-              tagTone="accent"
-              description="Your own repo. Pull from remote and push local edits back."
+              subtitle="Two-way sync"
+              description="Your own repo. Pull and push edits."
+              tone="accent"
             />
             <KindOption
               selected={kind === "open-source"}
               onClick={() => !busy && setKind("open-source")}
-              title="Open-source"
-              tag="pull-only"
-              tagTone="warn"
-              description="Third-party repo. Pull only; local edits cannot be pushed upstream."
+              title="Open source"
+              subtitle="Read-only"
+              description="Third-party. Pull only."
+              tone="hollow"
             />
           </div>
-        </div>
+        </FieldLabel>
 
-        <label className="block text-sm">
-          <div className="text-text-secondary mb-1">
-            Name <span className="text-text-muted">(optional)</span>
-          </div>
+        <FieldLabel
+          label="Name"
+          hint="Defaults to the last segment of the URL."
+        >
           <input
-            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-            placeholder="Derived from URL by default"
+            className="w-full h-9 px-3 bg-surface-1 border border-line-subtle rounded-md
+              text-sm text-fg-primary placeholder-fg-tertiary
+              focus:outline-none focus:border-accent/60 focus:bg-surface-2
+              transition-colors"
+            placeholder="Auto-derived"
             value={name}
             onChange={(e) => setName(e.target.value)}
             disabled={busy}
           />
-        </label>
+        </FieldLabel>
 
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="ghost" onClick={onClose} disabled={busy}>
@@ -559,37 +716,61 @@ function RegisterRepoDialog({
   );
 }
 
+function FieldLabel({
+  label,
+  hint,
+  children
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <label className="block">
+      <div className="mb-1.5 text-xs font-medium text-fg-secondary">
+        {label}
+        {hint ? (
+          <span className="ml-2 font-normal text-fg-tertiary">{hint}</span>
+        ) : null}
+      </div>
+      {children}
+    </label>
+  );
+}
+
 function KindOption({
   selected,
   onClick,
   title,
-  tag,
-  tagTone,
-  description
+  subtitle,
+  description,
+  tone
 }: {
   selected: boolean;
   onClick: () => void;
   title: string;
-  tag: string;
-  tagTone: "accent" | "warn";
+  subtitle: string;
   description: string;
+  tone: "accent" | "hollow";
 }): React.JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`text-left p-3 rounded border transition-colors ${
+      className={[
+        "text-left p-3 rounded-lg border transition-colors duration-fast",
         selected
-          ? "border-accent bg-accent-muted/20"
-          : "border-border bg-surface hover:bg-elevated"
-      }`}
+          ? "border-accent/60 bg-accent-muted"
+          : "border-line-subtle bg-surface-1 hover:bg-surface-2 hover:border-line"
+      ].join(" ")}
     >
-      <div className="flex items-center gap-2">
-        <span className="font-medium text-text-primary">{title}</span>
-        <Badge tone={tagTone}>{tag}</Badge>
+      <div className="flex items-center gap-1.5 text-sm font-medium text-fg-primary">
+        <StatusDot tone={tone} />
+        {title}
       </div>
-      <div className="text-xs text-text-secondary mt-1.5 leading-snug">
+      <div className="mt-0.5 text-xs text-fg-tertiary">{subtitle}</div>
+      <div className="mt-2 text-xs text-fg-secondary leading-snug">
         {description}
       </div>
     </button>

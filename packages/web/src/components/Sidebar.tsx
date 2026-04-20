@@ -1,16 +1,17 @@
 import type * as React from "react";
 /**
- * Left sidebar navigation (240px fixed).
+ * Left sidebar navigation (232px fixed).
  *
- * Per docs/asset/design.md § Pass 1 Information Architecture:
- *   - Default page = Sync Status (working dashboard)
- *   - 5 top-level sections + Settings/Docs
- *   - SSE status dot at the top
+ * Graphite UI v0.3:
+ *   - Active item uses a 2px accent rail on the left, not a background fill
+ *   - Logo + version + SSE status all fit on one tight row
+ *   - Badges: right-aligned tabular numbers in fg-tertiary (no pills)
+ *   - ⌘K hint lives in a footer with hairline above it
  */
 
 import { NavLink } from "react-router-dom";
 
-import { useSse } from "../lib/sse.js";
+import { useSse, type SseStatus } from "../lib/sse.js";
 
 import { StatusDot } from "./ui.js";
 
@@ -18,7 +19,6 @@ interface NavItem {
   to: string;
   label: string;
   badge?: number | null;
-  shortcut?: string;
 }
 
 export interface SidebarProps {
@@ -33,36 +33,35 @@ export function Sidebar({ badges }: SidebarProps): React.JSX.Element {
   const { status } = useSse();
 
   const items: NavItem[] = [
-    { to: "/", label: "Sync Status", badge: badges.attention, shortcut: "⌘1" },
-    { to: "/repos", label: "Repos", badge: badges.repos, shortcut: "⌘2" },
-    {
-      to: "/projects",
-      label: "Projects",
-      badge: badges.projects,
-      shortcut: "⌘3"
-    },
-    { to: "/matrix", label: "Skill Matrix", shortcut: "⌘4" },
-    { to: "/settings", label: "Settings", shortcut: "⌘5" }
+    { to: "/", label: "Sync Status", badge: badges.attention },
+    { to: "/repos", label: "Repos", badge: badges.repos },
+    { to: "/projects", label: "Projects", badge: badges.projects },
+    { to: "/matrix", label: "Skill Matrix" },
+    { to: "/settings", label: "Settings" }
   ];
 
   return (
     <aside
-      className="w-sidebar-w shrink-0 border-r border-border bg-surface flex flex-col"
+      className="w-sidebar-w shrink-0 flex flex-col border-r border-line-subtle bg-canvas"
       role="navigation"
       aria-label="Primary"
     >
-      <div className="px-4 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="text-lg font-semibold tracking-tight text-text-primary">Astack</div>
-          <div className="text-[10px] px-1 py-0.5 bg-elevated text-text-muted rounded-xs uppercase">
-            v0.1
-          </div>
+      {/* Brand row */}
+      <div className="h-14 px-5 flex items-center justify-between">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[15px] font-semibold tracking-tight text-fg-primary">
+            Astack
+          </span>
+          <span className="text-[11px] font-mono text-fg-quaternary">
+            v0.2
+          </span>
         </div>
         <ServerIndicator status={status} />
       </div>
 
-      <nav className="flex-1 px-2">
-        <ul className="flex flex-col">
+      {/* Nav */}
+      <nav className="flex-1 px-3">
+        <ul className="flex flex-col gap-px">
           {items.map((item) => (
             <li key={item.to}>
               <NavLink
@@ -70,29 +69,41 @@ export function Sidebar({ badges }: SidebarProps): React.JSX.Element {
                 end={item.to === "/"}
                 className={({ isActive }) =>
                   [
-                    "flex items-center justify-between px-2 py-1.5 rounded text-sm transition-colors",
+                    "group relative flex items-center justify-between",
+                    "h-8 pl-3 pr-2 rounded-md text-sm transition-colors duration-fast",
                     isActive
-                      ? "bg-elevated text-text-primary"
-                      : "text-text-secondary hover:text-text-primary hover:bg-elevated"
+                      ? "text-fg-primary"
+                      : "text-fg-secondary hover:text-fg-primary hover:bg-surface-1"
                   ].join(" ")
                 }
               >
-                <span>{item.label}</span>
-                <div className="flex items-center gap-2 text-text-muted">
-                  {typeof item.badge === "number" && item.badge > 0 ? (
-                    <span className="tabular text-xs">{item.badge}</span>
-                  ) : null}
-                </div>
+                {({ isActive }) => (
+                  <>
+                    {isActive ? (
+                      <span
+                        aria-hidden
+                        className="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full bg-accent"
+                      />
+                    ) : null}
+                    <span className="truncate">{item.label}</span>
+                    {typeof item.badge === "number" && item.badge > 0 ? (
+                      <span className="tabular text-xs text-fg-tertiary group-hover:text-fg-secondary">
+                        {item.badge}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </NavLink>
             </li>
           ))}
         </ul>
       </nav>
 
-      <div className="p-3 text-xs text-text-muted border-t border-border">
-        <div className="flex items-center gap-2">
+      {/* Footer */}
+      <div className="px-5 py-3 hairline">
+        <div className="flex items-center gap-2 text-xs text-fg-tertiary">
           <span>Command palette</span>
-          <kbd className="px-1.5 py-0.5 text-[10px] rounded-xs border border-border bg-elevated font-mono">
+          <kbd className="inline-flex items-center h-4 px-1 text-[10px] rounded-xs border border-line-subtle bg-surface-1 font-mono text-fg-secondary">
             ⌘K
           </kbd>
         </div>
@@ -101,7 +112,7 @@ export function Sidebar({ badges }: SidebarProps): React.JSX.Element {
   );
 }
 
-function ServerIndicator({ status }: { status: string }): React.JSX.Element {
+function ServerIndicator({ status }: { status: SseStatus }): React.JSX.Element {
   const tone =
     status === "online"
       ? "accent"
@@ -112,18 +123,15 @@ function ServerIndicator({ status }: { status: string }): React.JSX.Element {
     status === "online"
       ? "Daemon online"
       : status === "connecting"
-        ? "Connecting…"
+        ? "Connecting to daemon"
         : "Daemon offline — run: astack server start";
   return (
     <span
-      className="flex items-center gap-1"
+      className="flex items-center gap-1.5"
       title={title}
       aria-label={title}
     >
-      <StatusDot tone={tone as "accent" | "warn" | "error"} />
-      <span className="text-[10px] uppercase tracking-wide text-text-muted">
-        {status}
-      </span>
+      <StatusDot tone={tone} />
     </span>
   );
 }
