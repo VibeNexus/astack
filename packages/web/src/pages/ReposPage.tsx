@@ -769,7 +769,7 @@ function RegisterRepoDialog({
     >
       <div
         className="w-[520px] max-w-[92vw] rounded-xl border border-line
-          bg-[#14171c] shadow-2xl shadow-black/40 p-6 space-y-5"
+          bg-overlay shadow-2xl shadow-black/40 p-6 space-y-5"
       >
         <div>
           <div className="text-lg font-semibold text-fg-primary">

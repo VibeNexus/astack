@@ -177,7 +177,7 @@ function RegisterProjectDialog({
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-[480px] max-w-[90vw] bg-elevated border border-border rounded p-4 space-y-3">
+      <div className="w-[480px] max-w-[90vw] bg-overlay border border-border rounded p-4 space-y-3">
         <div className="text-lg font-semibold">Register project</div>
         <div className="text-sm text-text-secondary">
           Or, from your project root:{" "}

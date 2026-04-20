@@ -168,7 +168,7 @@ export function CommandPalette({
       aria-label="Command palette"
     >
       <div
-        className="w-[520px] max-w-[90vw] bg-elevated border border-border rounded shadow-xl overflow-hidden"
+        className="w-[520px] max-w-[90vw] bg-overlay border border-border rounded shadow-xl overflow-hidden"
         onKeyDown={handleKey}
       >
         <div className="border-b border-border px-3">

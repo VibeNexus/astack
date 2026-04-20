@@ -33,6 +33,16 @@ export default {
           3: "rgba(255, 255, 255, 0.06)"   // modal / popover
         },
 
+        // Opaque-surface token for modal / drawer / popover backgrounds.
+        // v0.2's surface/* ramp is translucent (rgba alpha) which works
+        // great for "layer depth on top of base" but falls apart the
+        // moment a modal floats over arbitrary content — the modal's
+        // backdrop dimming + 4% white overlay let users see the content
+        // BEHIND the modal. This token is the one non-translucent
+        // surface; pick a color slightly warmer than base so depth
+        // still reads without relying on alpha.
+        overlay: "#14171c",
+
         // Border ramp. Very subtle by default — a hint, not a wall.
         line: {
           subtle: "rgba(255, 255, 255, 0.06)",

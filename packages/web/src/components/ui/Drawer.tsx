@@ -165,7 +165,10 @@ export function Drawer({
         style={{ width: `min(${width}px, 100vw)` }}
         className={[
           "absolute right-0 top-0 h-full",
-          "bg-elevated border-l border-border",
+          // bg-overlay is opaque (#14171c) — surface-* tokens are all
+          // translucent and let content behind the backdrop bleed through
+          // the drawer body. See tailwind.config.js 'overlay' for why.
+          "bg-overlay border-l border-border",
           "shadow-2xl shadow-black/40",
           "flex flex-col",
           "transition-transform duration-fast ease-out motion-reduce:transition-none",
