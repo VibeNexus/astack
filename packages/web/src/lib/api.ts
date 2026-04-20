@@ -20,6 +20,7 @@ import {
   type DeleteToolLinkResponse,
   type GetProjectStatusResponse,
   type ListProjectsResponse,
+  type ListRepoSkillsResponse,
   type ListReposResponse,
   type PushResponse,
   type RefreshRepoResponse,
@@ -112,6 +113,8 @@ export const api = {
     request("DELETE", `/api/repos/${id}`),
   refreshRepo: (id: number): Promise<RefreshRepoResponse> =>
     request("POST", `/api/repos/${id}/refresh`),
+  listRepoSkills: (id: number): Promise<ListRepoSkillsResponse> =>
+    request("GET", `/api/repos/${id}/skills`),
 
   // Projects
   listProjects: (

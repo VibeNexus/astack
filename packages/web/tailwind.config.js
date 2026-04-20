@@ -17,10 +17,16 @@ export default {
     extend: {
       colors: {
         // Base surfaces (dark theme).
+        // Contrast ramp: base → surface → elevated should be visibly
+        // distinct on common LCDs (not just on calibrated OLED). The
+        // original Linear-inspired values (#0b0d10/#14171c) only had
+        // ~1.2:1 surface-vs-base luminance ratio and cards faded into
+        // the page background. Bumped surface/elevated one stop so
+        // cards read as cards and the 1px border is visible.
         base: "#0b0d10",
-        surface: "#14171c",
-        elevated: "#1a1e24",
-        border: "#2a2f37",
+        surface: "#1b2028",
+        elevated: "#242a34",
+        border: "#3a414d",
 
         // Text ramp. Bumped one notch brighter than the original spec
         // (#e5e7eb / #9ca3af / #6b7280) after user feedback that section
