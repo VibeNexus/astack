@@ -17,10 +17,14 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  // Serial by default: every test mutates the shared E2E daemon state
+  // (projects, repos, sync-logs), so parallel runs cause cross-test
+  // bleed-through. If CI wall time becomes a problem, we'll shard across
+  // multiple daemon instances, not threads.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   timeout: 30_000,
   expect: { timeout: 5_000 },

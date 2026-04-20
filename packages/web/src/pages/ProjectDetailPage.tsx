@@ -1,35 +1,76 @@
 import type * as React from "react";
 /**
- * Project detail — subscriptions, tool links, and actions for one project.
+ * Project detail — v0.3 redesign.
+ *
+ * Layout:
+ *   ProjectHeader (crumb, title, path, SummaryBar, Sync/Push buttons)
+ *   Tabs — Subscriptions / Linked Tools / Sync History / Settings
+ *   TabPanel for each
+ *
+ * State management:
+ *   - `status` — full GetProjectStatusResponse (SubscriptionWithState[] + ToolLink[])
+ *   - `useSearchParams` drives the active tab so deep links + browser
+ *     back/forward both work. Invalid `?tab=<unknown>` falls back to
+ *     'subscriptions' silently (see validateTab).
+ *
+ * Actions go through useProjectActions (lib/useProjectActions.ts) which
+ * consolidates the try/catch/toast/reload boilerplate.
+ *
+ * PRs after this one:
+ *   PR7 — Browse Skills Drawer + SyncResultCard (the real + Add flow)
+ *   PR8 — Linked Tools / Sync History / Settings tab content
+ *   PR9 — Mobile responsive + CommandPalette extensions + a11y polish
  */
 
-import type { GetProjectStatusResponse } from "@astack/shared";
-import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import type { GetProjectStatusResponse, SubscribeResponse, SyncResponse } from "@astack/shared";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import {
-  Badge,
-  Button,
-  Card,
-  Skeleton,
-  StatusDot
-} from "../components/ui/index.js";
+  BrowseSkillsDrawer,
+  makeSubscribedRefSet
+} from "../components/project/BrowseSkillsDrawer.js";
+import { LinkedToolsPanel } from "../components/project/LinkedToolsPanel.js";
+import { ProjectHeader } from "../components/project/ProjectHeader.js";
+import { ProjectSettingsPanel } from "../components/project/ProjectSettingsPanel.js";
+import { SubscriptionsPanel } from "../components/project/SubscriptionsPanel.js";
+import { SyncHistoryPanel } from "../components/project/SyncHistoryPanel.js";
+import { SyncResultCard } from "../components/project/SyncResultCard.js";
+import { Skeleton, TabPanel, Tabs, type TabItem } from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
-import {
-  relativeTime,
-  shortHash,
-  subscriptionStatusInfo,
-  toolLinkStatusInfo
-} from "../lib/format.js";
-import { useEventListener } from "../lib/sse.js";
 import { useToast } from "../lib/toast.js";
+import { useEventListener } from "../lib/sse.js";
 import { useProjectActions } from "../lib/useProjectActions.js";
+
+// Stable set of tab ids — used for validating ?tab= and keyed lookup.
+const TAB_IDS = ["subscriptions", "tools", "history", "settings"] as const;
+type TabId = (typeof TAB_IDS)[number];
+
+/** `?tab=<hack>` → fallback to 'subscriptions'. */
+function validateTab(raw: string | null): TabId {
+  return (TAB_IDS as readonly string[]).includes(raw ?? "")
+    ? (raw as TabId)
+    : "subscriptions";
+}
 
 export function ProjectDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const projectId = Number(id);
   const [status, setStatus] = useState<GetProjectStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const activeTab = validateTab(params.get("tab"));
+  const [browseOpen, setBrowseOpen] = useState(false);
+  // Persisted sync-card state — stays visible until user dismisses, so
+  // conflicts don't flash away behind a toast. Supplants the pre-v0.3
+  // "Synced 3, 0 conflicts" one-liner for the batch subscribe + sync
+  // flow; a plain Sync button still uses a toast (cheaper when there
+  // are zero outcomes worth listing).
+  const [syncCard, setSyncCard] = useState<{
+    result: SyncResponse;
+    failures?: SubscribeResponse["failures"];
+    readonlySkipped?: number;
+  } | null>(null);
   const toast = useToast();
 
   const load = useCallback(async () => {
@@ -63,11 +104,6 @@ export function ProjectDetailPage(): React.JSX.Element {
   useEventListener("tool_link.broken", () => void load());
   useEventListener("conflict.detected", () => void load());
 
-  // v0.3: generic mutation handlers go through useProjectActions (DRY).
-  // Sync/Push keep custom result-to-toast logic here because they have
-  // multi-branch messaging (pushed vs. conflicts vs. readonly_skipped),
-  // not a single okMsg — so we use runAction as the escape hatch and
-  // handle the non-error result locally.
   const actions = useProjectActions(projectId, load);
 
   async function handleSync(): Promise<void> {
@@ -75,6 +111,8 @@ export function ProjectDetailPage(): React.JSX.Element {
       errMsg: "Sync failed"
     });
     if (r) {
+      // PR7 replaces this toast with a SyncResultCard. Keep the toast
+      // behavior byte-identical to the pre-v0.3 implementation for now.
       toast.ok(`Synced ${r.synced}, ${r.conflicts} conflict(s)`);
     }
   }
@@ -99,20 +137,66 @@ export function ProjectDetailPage(): React.JSX.Element {
     await actions.unsubscribe(skillId);
   }
 
-  async function handleAddLink(tool: string): Promise<void> {
-    await actions.addLink(tool);
+  async function handleUnregister(): Promise<void> {
+    const r = await actions.runAction(
+      () => api.deleteProject(projectId),
+      { errMsg: "Unregister failed", skipReload: true }
+    );
+    if (r) {
+      toast.ok("Project unregistered");
+      // Navigate back to project list; a manual window.location is
+      // cleaner than wiring useNavigate here since this is a one-shot
+      // terminal action.
+      window.location.href = "/projects";
+    }
   }
 
-  async function handleRemoveLink(tool: string): Promise<void> {
-    if (!confirm(`Remove ${tool} link?`)) return;
-    await actions.removeLink(tool);
+  /**
+   * Post-batch handler for BrowseSkillsDrawer. Stash the subscribe+sync
+   * result so the SyncResultCard renders it, and reload project status
+   * so the new rows appear. We do NOT reconstruct a full SyncResponse
+   * when there were zero successful subscribes (no sync happened) —
+   * show only the failure half in that case.
+   */
+  async function handleSubscribed(result: SubscribeResponse): Promise<void> {
+    // Recompose a SyncResponse-shaped object from the subscribe logs so
+    // the existing SyncResultCard can render it. api.subscribe returns
+    // sync_logs but not outcomes — we synthesize minimal outcomes from
+    // logs so the "Updated N" section has something to show.
+    const logs = result.sync_logs;
+    const synced = logs.filter((l) => l.status === "success").length;
+    const conflicts = logs.filter((l) => l.status === "conflict").length;
+    const errors = logs.filter((l) => l.status === "error").length;
+    const syntheticResult: SyncResponse = {
+      outcomes: [], // subscribe endpoint doesn't expose full outcomes yet
+      synced,
+      up_to_date: 0,
+      conflicts,
+      errors
+    };
+    setSyncCard({
+      result: syntheticResult,
+      failures: result.failures.length > 0 ? result.failures : undefined
+    });
+    await load();
   }
+
+  // Memoized set of refs the user has already subscribed to — used by
+  // BrowseSkillsDrawer to disable those rows. Declared BEFORE any early
+  // return so Rules of Hooks stay consistent across renders (skeleton
+  // branch must still call the same hooks in the same order).
+  const alreadySubscribed = useMemo(
+    () => makeSubscribedRefSet(status?.subscriptions ?? []),
+    [status?.subscriptions]
+  );
+
+  // ---- render ----
 
   if (error) {
     return (
       <div className="space-y-3">
         <div className="text-sm text-error">{error}</div>
-        <Link to="/projects" className="text-sm text-text-secondary underline">
+        <Link to="/projects" className="text-sm text-fg-secondary underline">
           ← back to Projects
         </Link>
       </div>
@@ -123,182 +207,132 @@ export function ProjectDetailPage(): React.JSX.Element {
     return (
       <div className="space-y-3">
         <Skeleton className="h-8 w-60" />
-        <Skeleton className="h-24" />
+        <Skeleton className="h-5 w-96" />
+        <Skeleton className="h-9 w-full" />
         <Skeleton className="h-40" />
       </div>
     );
   }
 
+  // Tab definitions include live badges so users see "3 attention items"
+  // on the Subscriptions tab without clicking through.
+  const attentionCount = status.subscriptions.filter(
+    (s) => s.state !== "synced"
+  ).length;
+  const brokenTools = status.tool_links.filter(
+    (t) => t.status === "broken"
+  ).length;
+  const tabs: readonly TabItem[] = [
+    {
+      id: "subscriptions",
+      label: "Subscriptions",
+      badge: status.subscriptions.length
+    },
+    {
+      id: "tools",
+      label: "Linked Tools",
+      badge: status.tool_links.length
+    },
+    { id: "history", label: "Sync History" },
+    { id: "settings", label: "Settings" }
+  ];
+
+  const setTab = (id: string): void => {
+    const next = new URLSearchParams(params);
+    // Keep URL clean: omit the param when default (subscriptions).
+    if (id === "subscriptions") next.delete("tab");
+    else next.set("tab", id);
+    setParams(next, { replace: false });
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between">
-        <div>
-          <Link
-            to="/projects"
-            className="text-xs text-text-muted hover:text-text-secondary"
-          >
-            ← Projects
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight mt-1">
-            {status.project.name}
-          </h1>
-          <div className="text-xs text-text-muted font-mono mt-1">
-            {status.project.path}
-          </div>
+      <ProjectHeader
+        status={status}
+        toolLinks={status.tool_links}
+        onSync={handleSync}
+        onPush={handlePush}
+      />
+
+      {syncCard && (
+        <SyncResultCard
+          projectId={projectId}
+          result={syncCard.result}
+          subscribeFailures={syncCard.failures}
+          readonlySkipped={syncCard.readonlySkipped}
+          onDismiss={() => setSyncCard(null)}
+        />
+      )}
+      {/* Attention pills are informational; the top-of-page visual comes from
+         the SummaryLine + the tab badges themselves. Skipping a stand-alone
+         banner keeps the layout calmer. */}
+      {attentionCount > 0 || brokenTools > 0 ? (
+        <div className="text-xs text-fg-tertiary">
+          {attentionCount > 0 && (
+            <span>
+              {attentionCount} subscription{attentionCount === 1 ? "" : "s"}{" "}
+              need attention
+            </span>
+          )}
+          {attentionCount > 0 && brokenTools > 0 && (
+            <span className="mx-1">·</span>
+          )}
+          {brokenTools > 0 && (
+            <span>
+              {brokenTools} broken tool link{brokenTools === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
-        <div className="flex gap-2">
-          <Button onClick={handleSync}>Sync</Button>
-          <Button variant="primary" onClick={handlePush}>
-            Push
-          </Button>
-        </div>
-      </div>
+      ) : null}
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium text-text-secondary">
-          Subscriptions
-          <Badge tone="neutral" className="ml-2">
-            {status.subscriptions.length}
-          </Badge>
-        </h2>
-        {status.subscriptions.length === 0 ? (
-          <Card className="text-sm text-text-secondary">
-            No subscriptions yet. Use the CLI:{" "}
-            <span className="font-mono">astack subscribe &lt;skill&gt;</span>
-          </Card>
-        ) : (
-          <Card className="p-0 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-text-muted text-xs">
-                  <th className="font-normal px-3 py-2">State</th>
-                  <th className="font-normal px-3 py-2">Skill</th>
-                  <th className="font-normal px-3 py-2">Repo</th>
-                  <th className="font-normal px-3 py-2">Version</th>
-                  <th className="font-normal px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {status.subscriptions.map((s) => {
-                  const info = subscriptionStatusInfo(s.state);
-                  return (
-                    <tr
-                      key={s.skill.id}
-                      className="border-t border-border hover:bg-elevated"
-                    >
-                      <td className="px-3 py-2">
-                        <span className="inline-flex items-center gap-2">
-                          <StatusDot tone={info.tone} />
-                          <span className="text-text-secondary">
-                            {info.label}
-                          </span>
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs">
-                        {s.skill.name}
-                        {s.skill.type === "skill" ? (
-                          <Badge tone="neutral" className="ml-1">
-                            dir
-                          </Badge>
-                        ) : null}
-                      </td>
-                      <td className="px-3 py-2 text-text-secondary">
-                        <span className="inline-flex items-center gap-2">
-                          {s.repo.name}
-                          {s.repo.kind === "open-source" ? (
-                            <Badge
-                              tone="warn"
-                              title="Open-source repo — pull only"
-                            >
-                              read-only
-                            </Badge>
-                          ) : null}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs text-text-muted">
-                        {shortHash(s.skill.version)}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {s.state === "conflict" ? (
-                          <Link
-                            to={`/resolve/${projectId}/${s.skill.id}`}
-                          >
-                            <Button size="sm">Resolve</Button>
-                          </Link>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleUnsubscribe(s.skill.id)}
-                            className="text-error hover:text-error"
-                          >
-                            Unsubscribe
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Card>
-        )}
-      </section>
+      <Tabs
+        tabs={tabs}
+        activeId={activeTab}
+        onChange={setTab}
+        aria-label="Project sections"
+        idPrefix="project-detail"
+      />
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium text-text-secondary">
-          Linked tools
-          <Badge tone="neutral" className="ml-2">
-            {status.tool_links.length}
-          </Badge>
-        </h2>
-        <Card>
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            {status.tool_links.map((l) => {
-              const info = toolLinkStatusInfo(l.status);
-              return (
-                <div
-                  key={l.id}
-                  className="flex items-center gap-2 border border-border rounded px-2 py-1 text-xs"
-                >
-                  <StatusDot tone={info.tone} />
-                  <span>{l.tool_name}</span>
-                  <span className="text-text-muted font-mono">{l.dir_name}</span>
-                  <button
-                    className="text-text-muted hover:text-error ml-1"
-                    onClick={() => handleRemoveLink(l.tool_name)}
-                    aria-label={`remove ${l.tool_name} link`}
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-          <div className="text-xs text-text-muted mb-1">Add tool</div>
-          <div className="flex gap-2">
-            {["cursor", "codebuddy", "windsurf"].map((tool) => {
-              const already = status.tool_links.some(
-                (l) => l.tool_name === tool
-              );
-              return (
-                <Button
-                  key={tool}
-                  size="sm"
-                  disabled={already}
-                  onClick={() => handleAddLink(tool)}
-                >
-                  + {tool}
-                </Button>
-              );
-            })}
-          </div>
-        </Card>
-      </section>
+      <TabPanel tabId="subscriptions" activeId={activeTab} idPrefix="project-detail">
+        <SubscriptionsPanel
+          status={status}
+          projectId={projectId}
+          onUnsubscribe={handleUnsubscribe}
+          onBrowse={() => setBrowseOpen(true)}
+        />
+      </TabPanel>
 
-      <div className="text-xs text-text-muted">
-        Last synced: {relativeTime(status.last_synced)}
-      </div>
+      <TabPanel tabId="tools" activeId={activeTab} idPrefix="project-detail">
+        <LinkedToolsPanel
+          links={status.tool_links}
+          onAdd={async (tool) => {
+            await actions.addLink(tool);
+          }}
+          onRemove={(tool) => {
+            if (!confirm(`Remove ${tool} link?`)) return;
+            void actions.removeLink(tool);
+          }}
+        />
+      </TabPanel>
+
+      <TabPanel tabId="history" activeId={activeTab} idPrefix="project-detail">
+        <SyncHistoryPanel projectId={projectId} />
+      </TabPanel>
+
+      <TabPanel tabId="settings" activeId={activeTab} idPrefix="project-detail">
+        <ProjectSettingsPanel
+          project={status.project}
+          onUnregister={handleUnregister}
+        />
+      </TabPanel>
+
+      <BrowseSkillsDrawer
+        projectId={projectId}
+        open={browseOpen}
+        onClose={() => setBrowseOpen(false)}
+        alreadySubscribed={alreadySubscribed}
+        onSubscribed={handleSubscribed}
+      />
     </div>
   );
 }

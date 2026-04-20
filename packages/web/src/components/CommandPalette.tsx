@@ -8,7 +8,7 @@ import type * as React from "react";
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { Kbd } from "./ui/index.js";
 
@@ -27,11 +27,19 @@ export function CommandPalette({
   onClose: () => void;
 }): React.JSX.Element | null {
   const navigate = useNavigate();
+  const location = useLocation();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const commands: PaletteCommand[] = useMemo(
-    () => [
+  // v0.3: extract current project id from the URL if we're on a project
+  // detail route. Lets us surface project-specific actions in the palette.
+  const projectDetailMatch = useMemo(() => {
+    const m = location.pathname.match(/^\/projects\/(\d+)/);
+    return m ? { projectId: Number(m[1]!) } : null;
+  }, [location.pathname]);
+
+  const commands: PaletteCommand[] = useMemo(() => {
+    const list: PaletteCommand[] = [
       {
         label: "Go to Sync Status",
         hint: "⌘1",
@@ -66,9 +74,40 @@ export function CommandPalette({
         label: "Register new project",
         run: () => navigate("/projects?action=new")
       }
-    ],
-    [navigate]
-  );
+    ];
+
+    // v0.3: project-detail context surfaces direct jumps to each tab.
+    // We can't programmatically open the BrowseSkillsDrawer from here
+    // without leaking page state into global — instead, navigate to the
+    // Subscriptions tab and leave the user one click away.
+    if (projectDetailMatch) {
+      const pid = projectDetailMatch.projectId;
+      list.push(
+        {
+          label: "Subscriptions tab",
+          run: () => navigate(`/projects/${pid}`),
+          keywords: ["subscribe", "skill"]
+        },
+        {
+          label: "Linked Tools tab",
+          run: () => navigate(`/projects/${pid}?tab=tools`),
+          keywords: ["link", "symlink", "cursor", "codebuddy", "windsurf"]
+        },
+        {
+          label: "Sync History tab",
+          run: () => navigate(`/projects/${pid}?tab=history`),
+          keywords: ["log", "audit"]
+        },
+        {
+          label: "Project Settings tab",
+          run: () => navigate(`/projects/${pid}?tab=settings`),
+          keywords: ["unregister", "auto-sync"]
+        }
+      );
+    }
+
+    return list;
+  }, [navigate, projectDetailMatch]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
