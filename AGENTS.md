@@ -30,7 +30,8 @@
 
 ## 5. 当前活跃迭代
 
-（无活跃迭代）
+**v0.3 — 项目详情页重设计 + Web 端完整管理能力**（IN_PROGRESS，2026-04-20）
+详见 [docs/version/v0.3-project-detail-redesign.md](docs/version/v0.3-project-detail-redesign.md)
 
 **最近完成：** v0.2 — sqlite 换底 + 多仓库目录兼容（2026-04-19，[spec](docs/version/v0.2-sqlite-and-multi-repo.md)）
 
