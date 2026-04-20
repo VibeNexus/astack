@@ -7,6 +7,10 @@
   "bin": {
     "astack-server": "./dist/bin.js"
   },
+  "files": [
+    "dist",
+    "system-skills"
+  ],
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b --watch",
