@@ -169,4 +169,66 @@ describe("ProjectService", () => {
       expect(fs.readdirSync(projectDir.path).sort()).toEqual(snapshotBefore);
     });
   });
+
+  // v0.3: primary_tool_status is derived at every read — never cached.
+  describe("primary_tool_status", () => {
+    it("is 'missing' when .claude/ does not exist", () => {
+      const project = service.register({ path: projectDir.path });
+      expect(project.primary_tool_status).toBe("missing");
+    });
+
+    it("is 'empty' when .claude/ exists but has no skills/ or commands/", () => {
+      fs.mkdirSync(path.join(projectDir.path, ".claude"));
+      const project = service.register({ path: projectDir.path });
+      expect(project.primary_tool_status).toBe("empty");
+    });
+
+    it("is 'initialized' when .claude/skills/ exists", () => {
+      fs.mkdirSync(path.join(projectDir.path, ".claude", "skills"), {
+        recursive: true
+      });
+      const project = service.register({ path: projectDir.path });
+      expect(project.primary_tool_status).toBe("initialized");
+    });
+
+    it("is 'initialized' when .claude/commands/ exists (skills/ missing is fine)", () => {
+      fs.mkdirSync(path.join(projectDir.path, ".claude", "commands"), {
+        recursive: true
+      });
+      const project = service.register({ path: projectDir.path });
+      expect(project.primary_tool_status).toBe("initialized");
+    });
+
+    it("re-evaluates on every read — adding skills/ after register flips status", () => {
+      const project = service.register({ path: projectDir.path });
+      expect(project.primary_tool_status).toBe("missing");
+
+      fs.mkdirSync(path.join(projectDir.path, ".claude", "skills"), {
+        recursive: true
+      });
+      const refetched = service.mustFindById(project.id);
+      expect(refetched.primary_tool_status).toBe("initialized");
+    });
+
+    it("list() returns enriched status for every project", async () => {
+      const b = await tmp.dir({ unsafeCleanup: true });
+      try {
+        fs.mkdirSync(path.join(projectDir.path, ".claude", "skills"), {
+          recursive: true
+        });
+        service.register({ path: projectDir.path });
+        service.register({ path: b.path });
+
+        const { projects } = service.list({ offset: 0, limit: 10 });
+        expect(projects).toHaveLength(2);
+        const byPath = new Map(projects.map((p) => [p.path, p]));
+        expect(byPath.get(projectDir.path)!.primary_tool_status).toBe(
+          "initialized"
+        );
+        expect(byPath.get(b.path)!.primary_tool_status).toBe("missing");
+      } finally {
+        await b.cleanup();
+      }
+    });
+  });
 });

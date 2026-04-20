@@ -5,6 +5,7 @@
 import { z } from "zod";
 
 import {
+  PrimaryToolStatus,
   RepoKind,
   RepoStatus,
   ResolveStrategy,
@@ -77,6 +78,11 @@ export const ToolLinkBrokenReasonSchema = z.enum([
   ToolLinkBrokenReason.NotASymlink,
   ToolLinkBrokenReason.PermissionDenied
 ]);
+export const PrimaryToolStatusSchema = z.enum([
+  PrimaryToolStatus.Initialized,
+  PrimaryToolStatus.Empty,
+  PrimaryToolStatus.Missing
+]);
 export const ResolveStrategySchema = z.enum([
   ResolveStrategy.KeepLocal,
   ResolveStrategy.UseRemote,
@@ -145,6 +151,7 @@ export const ProjectSchema = z.object({
   name: NonEmptyStringSchema,
   path: NonEmptyStringSchema,
   primary_tool: z.string().default(".claude"),
+  primary_tool_status: PrimaryToolStatusSchema.nullable(),
   created_at: IsoDateTimeSchema
 });
 

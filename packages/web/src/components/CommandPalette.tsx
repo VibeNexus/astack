@@ -57,9 +57,10 @@ export function CommandPalette({
         run: () => navigate("/projects")
       },
       {
-        label: "Go to Skill Matrix",
+        label: "Go to Matrix",
         hint: "⌘4",
-        run: () => navigate("/matrix")
+        run: () => navigate("/matrix"),
+        keywords: ["skill matrix", "cross project", "grid"]
       },
       {
         label: "Go to Settings",

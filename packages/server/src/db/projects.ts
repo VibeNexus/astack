@@ -2,13 +2,22 @@
  * Project table access.
  *
  * projects is [SOURCE] — the authoritative local registry of target projects.
+ *
+ * DB row is a subset of the domain `Project`: `primary_tool_status` is
+ * derived at query time from the filesystem (v0.3), so it never
+ * round-trips through this table. Storing it would create stale data
+ * the moment a user removes `.claude/` out of band.
  */
 
 import type { Project } from "@astack/shared";
 
 import type { Db } from "./connection.js";
 
-type ProjectRow = Project;
+/**
+ * Persisted subset of Project. The service layer enriches this into the
+ * full domain type by inspecting the filesystem.
+ */
+export type ProjectRow = Omit<Project, "primary_tool_status">;
 
 export class ProjectRepository {
   constructor(private readonly db: Db) {}
@@ -17,7 +26,7 @@ export class ProjectRepository {
     name: string;
     path: string;
     primary_tool: string;
-  }): Project {
+  }): ProjectRow {
     const row = this.db
       .prepare<[string, string, string], ProjectRow>(
         `INSERT INTO projects (name, path, primary_tool)
@@ -29,7 +38,7 @@ export class ProjectRepository {
     return row;
   }
 
-  findById(id: number): Project | null {
+  findById(id: number): ProjectRow | null {
     return (
       this.db
         .prepare<[number], ProjectRow>(
@@ -40,7 +49,7 @@ export class ProjectRepository {
     );
   }
 
-  findByPath(p: string): Project | null {
+  findByPath(p: string): ProjectRow | null {
     return (
       this.db
         .prepare<[string], ProjectRow>(
@@ -53,7 +62,7 @@ export class ProjectRepository {
 
   list(
     opts: { offset: number; limit: number } = { offset: 0, limit: 50 }
-  ): { rows: Project[]; total: number } {
+  ): { rows: ProjectRow[]; total: number } {
     const rows = this.db
       .prepare<[number, number], ProjectRow>(
         `SELECT id, name, path, primary_tool, created_at

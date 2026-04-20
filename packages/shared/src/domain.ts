@@ -254,6 +254,24 @@ export interface SkillRepo {
   created_at: IsoDateTime;
 }
 
+/**
+ * Primary-tool directory status for a project.
+ *
+ * Derived at query time from the filesystem — `<project>/<primary_tool>/`:
+ *   - "initialized" — dir exists AND has at least one of skills/ | commands/
+ *   - "empty"       — dir exists but the expected sub-dirs are missing
+ *   - "missing"     — dir does not exist (or inaccessible)
+ *
+ * Never persisted. Added in v0.3 for the Projects list badge.
+ */
+export const PrimaryToolStatus = {
+  Initialized: "initialized",
+  Empty: "empty",
+  Missing: "missing"
+} as const;
+export type PrimaryToolStatus =
+  (typeof PrimaryToolStatus)[keyof typeof PrimaryToolStatus];
+
 /** A target project that consumes skills. */
 export interface Project {
   id: Id;
@@ -262,6 +280,12 @@ export interface Project {
   path: string;
   /** Primary tool directory (default ".claude"). */
   primary_tool: string;
+  /**
+   * Live filesystem status of the primary tool dir. Derived on every
+   * read — `null` only when the server hasn't computed it yet (e.g.
+   * legacy code paths that predate this field). Added in v0.3.
+   */
+  primary_tool_status: PrimaryToolStatus | null;
   created_at: IsoDateTime;
 }
 

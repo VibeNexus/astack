@@ -36,7 +36,7 @@ export function Sidebar({ badges }: SidebarProps): React.JSX.Element {
     { to: "/", label: "Sync Status", badge: badges.attention },
     { to: "/repos", label: "Repos", badge: badges.repos },
     { to: "/projects", label: "Projects", badge: badges.projects },
-    { to: "/matrix", label: "Skill Matrix" },
+    { to: "/matrix", label: "Matrix" },
     { to: "/settings", label: "Settings" }
   ];
 

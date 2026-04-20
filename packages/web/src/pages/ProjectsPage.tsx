@@ -3,16 +3,17 @@ import type * as React from "react";
  * Projects page — list projects and register new ones.
  */
 
-import type { Project } from "@astack/shared";
+import type { Project, PrimaryToolStatus } from "@astack/shared";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   Badge,
   Button,
   Card,
   EmptyState,
-  Skeleton
+  Skeleton,
+  StatusDot
 } from "../components/ui/index.js";
 import { PathAutocomplete } from "../components/PathAutocomplete.js";
 import { api, AstackError } from "../lib/api.js";
@@ -24,6 +25,7 @@ export function ProjectsPage(): React.JSX.Element {
   const [params, setParams] = useSearchParams();
   const showDialog = params.get("action") === "new";
   const toast = useToast();
+  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     try {
@@ -93,25 +95,42 @@ export function ProjectsPage(): React.JSX.Element {
           {projects.map((p) => (
             <Card
               key={p.id}
-              className="flex items-center justify-between py-3 px-4"
+              interactive
+              onClick={() => navigate(`/projects/${p.id}`)}
+              // Role + keyboard to match the click behavior — screen
+              // readers announce these as interactive and Enter/Space
+              // opens the project just like clicking.
+              role="link"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  navigate(`/projects/${p.id}`);
+                }
+              }}
+              className="flex items-center justify-between py-3 px-4 cursor-pointer"
             >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Link
-                    to={`/projects/${p.id}`}
-                    className="font-medium hover:text-accent"
-                  >
-                    {p.name}
-                  </Link>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-fg-primary">{p.name}</span>
                   <Badge tone="neutral">id {p.id}</Badge>
+                  <PrimaryToolBadge
+                    tool={p.primary_tool}
+                    status={p.primary_tool_status}
+                  />
                 </div>
-                <div className="text-xs text-text-muted font-mono truncate mt-0.5">
+                <div className="text-xs text-fg-tertiary font-mono truncate mt-0.5">
                   {p.path}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              {/* stopPropagation so the delete button doesn't also
+                  navigate into the project. */}
+              <div
+                className="flex items-center gap-2 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <Link to={`/projects/${p.id}`}>
-                  <Button size="sm">Open</Button>
+                  <Button size="sm">Config</Button>
                 </Link>
                 <Button
                   size="sm"
@@ -206,5 +225,57 @@ function RegisterProjectDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * One-liner badge showing the project's primary tool dir + whether it's
+ * initialized on disk. Three states (see PrimaryToolStatus):
+ *   - initialized → green dot + ".claude" (ready)
+ *   - empty       → yellow dot + ".claude (empty)"
+ *   - missing     → muted dot + ".claude (not created)"
+ *   - null        → nothing (server hasn't populated; shouldn't happen
+ *                   in v0.3 but future-proof for legacy manifests)
+ *
+ * Visual weight kept low — this is a secondary signal next to the id
+ * badge. Primary info is still the project name + path.
+ */
+function PrimaryToolBadge({
+  tool,
+  status
+}: {
+  tool: string;
+  status: PrimaryToolStatus | null;
+}): React.JSX.Element | null {
+  if (status === null) return null;
+  const tone =
+    status === "initialized"
+      ? "accent"
+      : status === "empty"
+        ? "warn"
+        : "muted";
+  const suffix =
+    status === "initialized"
+      ? ""
+      : status === "empty"
+        ? " · empty"
+        : " · not created";
+  const title =
+    status === "initialized"
+      ? `Primary tool dir '${tool}' is set up.`
+      : status === "empty"
+        ? `Primary tool dir '${tool}' exists but has no skills/ or commands/ — run 'astack init' or subscribe to a skill.`
+        : `Primary tool dir '${tool}' does not exist. Run 'astack init' in the project root.`;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs text-fg-tertiary"
+      title={title}
+    >
+      <StatusDot tone={tone} />
+      <span className="font-mono">
+        {tool}
+        {suffix}
+      </span>
+    </span>
   );
 }

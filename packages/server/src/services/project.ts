@@ -12,6 +12,8 @@ import {
   AstackError,
   ErrorCode,
   EventType,
+  PrimaryToolStatus,
+  type PrimaryToolStatus as PrimaryToolStatusT,
   type Project,
   type ProjectStatus,
   type SubscriptionWithState,
@@ -19,7 +21,7 @@ import {
 } from "@astack/shared";
 
 import type { Db } from "../db/connection.js";
-import { ProjectRepository } from "../db/projects.js";
+import { ProjectRepository, type ProjectRow } from "../db/projects.js";
 import { ToolLinkRepository } from "../db/tool-links.js";
 import type { EventBus } from "../events.js";
 import type { Logger } from "../logger.js";
@@ -36,6 +38,34 @@ export interface RegisterProjectInput {
   primary_tool?: string;
 }
 
+/**
+ * Inspect `<project_path>/<primary_tool>/` and derive an initialization
+ * state for the Projects-list badge (v0.3).
+ *
+ * Heuristic matches what the `.claude/` convention uses — having one of
+ * `skills/` or `commands/` = meaningfully initialized, not just "someone
+ * mkdir'd the dir". This mirrors how scanner treats the project: an
+ * empty `.claude/` is indistinguishable from "never initialized" for
+ * our purposes.
+ */
+function derivePrimaryToolStatus(
+  projectPath: string,
+  primaryTool: string
+): PrimaryToolStatusT {
+  const dir = path.join(projectPath, primaryTool);
+  try {
+    const st = fs.statSync(dir);
+    if (!st.isDirectory()) return PrimaryToolStatus.Missing;
+  } catch {
+    return PrimaryToolStatus.Missing;
+  }
+  const skillsExists = fs.existsSync(path.join(dir, "skills"));
+  const commandsExists = fs.existsSync(path.join(dir, "commands"));
+  return skillsExists || commandsExists
+    ? PrimaryToolStatus.Initialized
+    : PrimaryToolStatus.Empty;
+}
+
 export class ProjectService {
   private readonly projects: ProjectRepository;
   private readonly toolLinks: ToolLinkRepository;
@@ -43,6 +73,18 @@ export class ProjectService {
   constructor(private readonly deps: ProjectServiceDeps) {
     this.projects = new ProjectRepository(deps.db);
     this.toolLinks = new ToolLinkRepository(deps.db);
+  }
+
+  /**
+   * Inflate a repo row (no primary_tool_status) into a full domain
+   * Project by probing the filesystem. Called at every outbound point —
+   * insert/find/list — so the wire shape is always self-consistent.
+   */
+  private enrich(row: ProjectRow): Project {
+    return {
+      ...row,
+      primary_tool_status: derivePrimaryToolStatus(row.path, row.primary_tool)
+    };
   }
 
   register(input: RegisterProjectInput): Project {
@@ -77,11 +119,13 @@ export class ProjectService {
       );
     }
 
-    const project = this.projects.insert({
-      name,
-      path: input.path,
-      primary_tool: input.primary_tool ?? ".claude"
-    });
+    const project = this.enrich(
+      this.projects.insert({
+        name,
+        path: input.path,
+        primary_tool: input.primary_tool ?? ".claude"
+      })
+    );
 
     this.deps.events.emit({
       type: EventType.ProjectRegistered,
@@ -110,11 +154,13 @@ export class ProjectService {
   }
 
   findById(projectId: number): Project | null {
-    return this.projects.findById(projectId);
+    const row = this.projects.findById(projectId);
+    return row ? this.enrich(row) : null;
   }
 
   findByPath(p: string): Project | null {
-    return this.projects.findByPath(p);
+    const row = this.projects.findByPath(p);
+    return row ? this.enrich(row) : null;
   }
 
   list(opts: { offset: number; limit: number }): {
@@ -122,7 +168,7 @@ export class ProjectService {
     total: number;
   } {
     const { rows, total } = this.projects.list(opts);
-    return { projects: rows, total };
+    return { projects: rows.map((r) => this.enrich(r)), total };
   }
 
   mustFindById(projectId: number): Project {
@@ -132,7 +178,7 @@ export class ProjectService {
         project_id: projectId
       });
     }
-    return row;
+    return this.enrich(row);
   }
 
   /**

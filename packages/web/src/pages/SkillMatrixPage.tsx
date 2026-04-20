@@ -144,7 +144,7 @@ export function SkillMatrixPage(): React.JSX.Element {
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Skill Matrix</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Matrix</h1>
         <div className="text-xs text-text-muted">
           <Badge tone="neutral" className="mr-2">
             {data.projects.length} project(s)
