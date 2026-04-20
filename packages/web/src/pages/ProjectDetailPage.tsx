@@ -30,6 +30,7 @@ import {
   BrowseSkillsDrawer,
   makeSubscribedRefSet
 } from "../components/project/BrowseSkillsDrawer.js";
+import { HarnessPanel } from "../components/project/HarnessPanel.js";
 import { LinkedToolsPanel } from "../components/project/LinkedToolsPanel.js";
 import { ProjectHeader } from "../components/project/ProjectHeader.js";
 import { ProjectSettingsPanel } from "../components/project/ProjectSettingsPanel.js";
@@ -43,7 +44,7 @@ import { useEventListener } from "../lib/sse.js";
 import { useProjectActions } from "../lib/useProjectActions.js";
 
 // Stable set of tab ids — used for validating ?tab= and keyed lookup.
-const TAB_IDS = ["subscriptions", "tools", "history", "settings"] as const;
+const TAB_IDS = ["subscriptions", "tools", "history", "harness", "settings"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 /** `?tab=<hack>` → fallback to 'subscriptions'. */
@@ -234,6 +235,13 @@ export function ProjectDetailPage(): React.JSX.Element {
       badge: status.tool_links.length
     },
     { id: "history", label: "Sync History" },
+    {
+      id: "harness",
+      label: "Harness",
+      // Badge left blank intentionally — HarnessPanel owns its own status
+      // display. A naive count here would either always-1 (noisy) or
+      // require another fetch (wasteful).
+    },
     { id: "settings", label: "Settings" }
   ];
 
@@ -317,6 +325,10 @@ export function ProjectDetailPage(): React.JSX.Element {
 
       <TabPanel tabId="history" activeId={activeTab} idPrefix="project-detail">
         <SyncHistoryPanel projectId={projectId} />
+      </TabPanel>
+
+      <TabPanel tabId="harness" activeId={activeTab} idPrefix="project-detail">
+        <HarnessPanel projectId={projectId} />
       </TabPanel>
 
       <TabPanel tabId="settings" activeId={activeTab} idPrefix="project-detail">

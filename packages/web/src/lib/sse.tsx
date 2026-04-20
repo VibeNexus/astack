@@ -69,7 +69,8 @@ export function SseProvider({ children }: PropsWithChildren): React.JSX.Element 
       "tool_link.created",
       "tool_link.removed",
       "tool_link.broken",
-      "seed.completed"
+      "seed.completed",
+      "harness.changed"
     ];
     for (const name of namedEvents) {
       source.addEventListener(name, listener);

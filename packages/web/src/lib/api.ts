@@ -25,6 +25,7 @@ import {
   type ListSyncLogsQuery,
   type ListSyncLogsResponse,
   type FsListResponse,
+  type ProjectHarnessState,
   type PushResponse,
   type RefreshRepoResponse,
   type RegisterProjectRequest,
@@ -195,7 +196,13 @@ export const api = {
     request(
       "DELETE",
       `/api/projects/${projectId}/links/${encodeURIComponent(tool)}`
-    )
+    ),
+
+  // Harness (v0.4 — system-skill installation state)
+  inspectHarness: (projectId: number): Promise<ProjectHarnessState> =>
+    request("GET", `/api/projects/${projectId}/harness`),
+  installHarness: (projectId: number): Promise<ProjectHarnessState> =>
+    request("POST", `/api/projects/${projectId}/harness/install`)
 };
 
 export { AstackError, ErrorCode };
