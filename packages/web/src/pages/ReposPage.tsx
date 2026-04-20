@@ -38,7 +38,7 @@ import {
   InlineTag,
   Skeleton,
   StatusDot
-} from "../components/ui.js";
+} from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
 import { relativeTime, shortHash } from "../lib/format.js";
 import { useEventListener } from "../lib/sse.js";

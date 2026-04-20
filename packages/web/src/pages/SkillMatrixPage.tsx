@@ -21,7 +21,7 @@ import {
   EmptyState,
   Skeleton,
   StatusDot
-} from "../components/ui.js";
+} from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
 import {
   shortHash,

@@ -13,7 +13,7 @@ import {
   Card,
   Skeleton,
   StatusDot
-} from "../components/ui.js";
+} from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
 import {
   relativeTime,
@@ -23,6 +23,7 @@ import {
 } from "../lib/format.js";
 import { useEventListener } from "../lib/sse.js";
 import { useToast } from "../lib/toast.js";
+import { useProjectActions } from "../lib/useProjectActions.js";
 
 export function ProjectDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
@@ -62,78 +63,49 @@ export function ProjectDetailPage(): React.JSX.Element {
   useEventListener("tool_link.broken", () => void load());
   useEventListener("conflict.detected", () => void load());
 
+  // v0.3: generic mutation handlers go through useProjectActions (DRY).
+  // Sync/Push keep custom result-to-toast logic here because they have
+  // multi-branch messaging (pushed vs. conflicts vs. readonly_skipped),
+  // not a single okMsg — so we use runAction as the escape hatch and
+  // handle the non-error result locally.
+  const actions = useProjectActions(projectId, load);
+
   async function handleSync(): Promise<void> {
-    try {
-      const r = await api.sync(projectId);
+    const r = await actions.runAction(() => api.sync(projectId), {
+      errMsg: "Sync failed"
+    });
+    if (r) {
       toast.ok(`Synced ${r.synced}, ${r.conflicts} conflict(s)`);
-      await load();
-    } catch (err) {
-      toast.error(
-        "Sync failed",
-        err instanceof AstackError ? err.message : String(err)
-      );
     }
   }
 
   async function handlePush(): Promise<void> {
-    try {
-      const r = await api.push(projectId);
-      if (r.pushed > 0) toast.ok(`Pushed ${r.pushed} skill(s)`);
-      else if (r.conflicts > 0) toast.warn(`${r.conflicts} conflict(s)`);
-      else if (r.readonly_skipped > 0 && r.pushed === 0) {
-        toast.warn(
-          `${r.readonly_skipped} skipped`,
-          "All edited skills live in pull-only (open-source) repos."
-        );
-      } else toast.ok("Nothing to push");
-      await load();
-    } catch (err) {
-      toast.error(
-        "Push failed",
-        err instanceof AstackError ? err.message : String(err)
+    const r = await actions.runAction(() => api.push(projectId), {
+      errMsg: "Push failed"
+    });
+    if (!r) return;
+    if (r.pushed > 0) toast.ok(`Pushed ${r.pushed} skill(s)`);
+    else if (r.conflicts > 0) toast.warn(`${r.conflicts} conflict(s)`);
+    else if (r.readonly_skipped > 0 && r.pushed === 0) {
+      toast.warn(
+        `${r.readonly_skipped} skipped`,
+        "All edited skills live in pull-only (open-source) repos."
       );
-    }
+    } else toast.ok("Nothing to push");
   }
 
   async function handleUnsubscribe(skillId: number): Promise<void> {
     if (!confirm("Unsubscribe this skill?")) return;
-    try {
-      await api.unsubscribe(projectId, skillId);
-      toast.ok("Unsubscribed");
-      await load();
-    } catch (err) {
-      toast.error(
-        "Unsubscribe failed",
-        err instanceof AstackError ? err.message : String(err)
-      );
-    }
+    await actions.unsubscribe(skillId);
   }
 
   async function handleAddLink(tool: string): Promise<void> {
-    try {
-      await api.createToolLink(projectId, { tool_name: tool });
-      toast.ok(`Linked ${tool}`);
-      await load();
-    } catch (err) {
-      toast.error(
-        "Link failed",
-        err instanceof AstackError ? err.message : String(err)
-      );
-    }
+    await actions.addLink(tool);
   }
 
   async function handleRemoveLink(tool: string): Promise<void> {
     if (!confirm(`Remove ${tool} link?`)) return;
-    try {
-      await api.deleteToolLink(projectId, tool);
-      toast.ok(`Removed ${tool}`);
-      await load();
-    } catch (err) {
-      toast.error(
-        "Remove failed",
-        err instanceof AstackError ? err.message : String(err)
-      );
-    }
+    await actions.removeLink(tool);
   }
 
   if (error) {

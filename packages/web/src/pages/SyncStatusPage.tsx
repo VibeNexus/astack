@@ -14,7 +14,7 @@ import type {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { Badge, Button, Card, EmptyState, Skeleton, StatusDot } from "../components/ui.js";
+import { Badge, Button, Card, EmptyState, Skeleton, StatusDot } from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
 import {
   relativeTime,

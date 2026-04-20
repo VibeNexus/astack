@@ -10,7 +10,7 @@ import type * as React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { Kbd } from "./ui.js";
+import { Kbd } from "./ui/index.js";
 
 interface PaletteCommand {
   label: string;

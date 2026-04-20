@@ -13,7 +13,7 @@ import { NavLink } from "react-router-dom";
 
 import { useSse, type SseStatus } from "../lib/sse.js";
 
-import { StatusDot } from "./ui.js";
+import { StatusDot } from "./ui/index.js";
 
 interface NavItem {
   to: string;

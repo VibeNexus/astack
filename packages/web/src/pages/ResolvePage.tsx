@@ -20,7 +20,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { Button, Card, Skeleton } from "../components/ui.js";
+import { Button, Card, Skeleton } from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
 import { shortHash } from "../lib/format.js";
 import { useToast } from "../lib/toast.js";

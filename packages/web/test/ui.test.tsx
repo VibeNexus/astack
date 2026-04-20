@@ -17,7 +17,7 @@ import {
   Kbd,
   Skeleton,
   StatusDot
-} from "../src/components/ui.js";
+} from "../src/components/ui/index.js";
 
 describe("Button", () => {
   it("renders children and fires onClick", () => {

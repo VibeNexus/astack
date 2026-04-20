@@ -8,7 +8,7 @@ import type * as React from "react";
 
 import { useEffect, useState } from "react";
 
-import { Card, Kbd } from "../components/ui.js";
+import { Card, Kbd } from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
 import { relativeTime } from "../lib/format.js";
 
