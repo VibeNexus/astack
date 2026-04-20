@@ -52,7 +52,15 @@ export const EventType = {
   // Tool link lifecycle
   ToolLinkCreated: "tool_link.created",
   ToolLinkRemoved: "tool_link.removed",
-  ToolLinkBroken: "tool_link.broken"
+  ToolLinkBroken: "tool_link.broken",
+
+  /**
+   * Builtin-seed bootstrap finished.
+   * Emitted once on daemon start after SeedService.seedBuiltinRepos()
+   * returns (success OR failure for each seed). Web dashboard uses this
+   * to show a dismissable banner when failed > 0.
+   */
+  SeedCompleted: "seed.completed"
 } as const;
 export type EventType = (typeof EventType)[keyof typeof EventType];
 
@@ -131,6 +139,21 @@ export const ToolLinkBrokenPayloadSchema = z.object({
   link: ToolLinkSchema
 });
 
+/**
+ * SeedCompleted: summary of the initial seed bootstrap.
+ *
+ * succeeded + failed + skipped === total number of builtin seeds
+ * (currently 3). `failed` names lets the Web dashboard name which
+ * repos didn't make it without re-fetching the state.
+ */
+export const SeedCompletedPayloadSchema = z.object({
+  succeeded: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  /** Short names of the seeds that failed to clone or scan. */
+  failed_names: z.array(z.string())
+});
+
 // ---------- Discriminated union ----------
 
 /**
@@ -189,6 +212,10 @@ export const AstackEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(EventType.ToolLinkBroken),
     payload: ToolLinkBrokenPayloadSchema
+  }),
+  z.object({
+    type: z.literal(EventType.SeedCompleted),
+    payload: SeedCompletedPayloadSchema
   })
 ]);
 export type AstackEvent = z.infer<typeof AstackEventSchema>;

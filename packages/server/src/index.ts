@@ -46,6 +46,12 @@ export {
   type ComputedSyncState
 } from "./services/sync.js";
 export {
+  SeedService,
+  type SeedServiceDeps,
+  type SeedSummary
+} from "./services/seed.js";
+export { BUILTIN_SEEDS, isBuiltinSeedUrl, type BuiltinSeed } from "./seeds.js";
+export {
   AstackManifestSchema,
   MANIFEST_RELATIVE_PATH,
   manifestPath,

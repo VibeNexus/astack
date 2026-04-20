@@ -242,6 +242,44 @@ describe("RepoService", () => {
         code: ErrorCode.REPO_NOT_FOUND
       });
     });
+
+    it("skips pull for an open-source repo with uncommitted local edits", async () => {
+      await bare.addCommitPush("commands/v1.md", "v1", "init");
+      const result = await service.register({
+        git_url: bare.url,
+        kind: "open-source"
+      });
+      // Dirty the working tree by writing a new file under the local clone.
+      const dirtyFile = path.join(
+        result.repo.local_path!,
+        "commands",
+        "local-edit.md"
+      );
+      fs.writeFileSync(dirtyFile, "hand-edited");
+
+      // Upstream adds a new commit that refresh would normally pull.
+      await bare.addCommitPush("commands/v2.md", "v2", "upstream");
+
+      const refreshed = await service.refresh(result.repo.id);
+
+      // changed=false; HEAD not moved; the local file is still there.
+      expect(refreshed.changed).toBe(false);
+      expect(refreshed.repo.head_hash).toBe(result.repo.head_hash);
+      expect(fs.existsSync(dirtyFile)).toBe(true);
+    });
+
+    it("does NOT consult isClean for a custom repo (only guards open-source)", async () => {
+      await bare.addCommitPush("commands/v1.md", "v1", "init");
+      const result = await service.register({ git_url: bare.url }); // default = custom
+
+      // Replace gitImpl.isClean with a spy that returns false — if custom
+      // refresh consulted it, we'd short-circuit to changed=false. But the
+      // guard should only run for open-source.
+      await bare.addCommitPush("commands/v2.md", "v2", "upstream");
+      const refreshed = await service.refresh(result.repo.id);
+      expect(refreshed.changed).toBe(true);
+      expect(refreshed.skills.map((s) => s.name).sort()).toEqual(["v1", "v2"]);
+    });
   });
 
   // ---------- remove ----------

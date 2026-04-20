@@ -30,9 +30,9 @@
 
 ## 5. 当前活跃迭代
 
-- **v0.2 — sqlite 换底 + 多仓库目录兼容**（APPROVED，已通过 `/plan-eng-review`）
-  - Spec: [`docs/version/v0.2-sqlite-and-multi-repo.md`](docs/version/v0.2-sqlite-and-multi-repo.md)
-  - 4 个 PR 顺序执行：PR0 spike → PR1 scanner 通用化 → PR2 schema v2 → PR3 driver 替换 → PR4 SeedService
+（无活跃迭代）
+
+**最近完成：** v0.2 — sqlite 换底 + 多仓库目录兼容（2026-04-19，[spec](docs/version/v0.2-sqlite-and-multi-repo.md)）
 
 ## 6. gstack
 

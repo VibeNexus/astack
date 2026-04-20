@@ -37,12 +37,14 @@ import type { EventBus } from "../events.js";
 import {
   gitClone,
   gitGetHead,
+  gitIsClean,
   gitPull,
   gitRemoteHead
 } from "../git.js";
 import type { LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
 import { scanRepo } from "../scanner/index.js";
+import { isBuiltinSeedUrl } from "../seeds.js";
 
 export interface RepoServiceDeps {
   db: Db;
@@ -62,13 +64,20 @@ export interface GitImpl {
   pull(localPath: string): Promise<void>;
   getHead(localPath: string): Promise<{ head: string; head_time: string }>;
   remoteHead(localPath: string): Promise<string>;
+  /**
+   * True when the working tree has no uncommitted changes. Consulted by
+   * refresh() for open-source repos to avoid silently overwriting any
+   * hand-edits the user made inside ~/.astack/repos/<name>.
+   */
+  isClean(localPath: string): Promise<boolean>;
 }
 
 export const defaultGitImpl: GitImpl = {
   clone: gitClone,
   pull: gitPull,
   getHead: gitGetHead,
-  remoteHead: gitRemoteHead
+  remoteHead: gitRemoteHead,
+  isClean: gitIsClean
 };
 
 export interface RegisterRepoOutput {
@@ -216,6 +225,13 @@ export class RepoService {
   /**
    * Force upstream pull + re-scan. Returns whether HEAD moved.
    * Takes the repo-level lock; throws REPO_BUSY if contended past timeout.
+   *
+   * For `open-source` repos we additionally check the working tree is
+   * clean before pulling — if the user hand-edited a SKILL.md inside
+   * ~/.astack/repos/<name>, we don't want to silently blow it away.
+   * A dirty open-source repo short-circuits to no-op + warning; the
+   * user can resolve manually (revert or commit + push) and refresh
+   * again.
    */
   async refresh(repoId: number): Promise<RefreshOutput> {
     const repo = this.mustFindById(repoId);
@@ -227,6 +243,28 @@ export class RepoService {
           "repo has no local clone path",
           { repo_id: repoId }
         );
+      }
+
+      // Safety check: for read-only (open-source) repos, refuse to pull
+      // over uncommitted local edits. This does NOT apply to 'custom'
+      // repos because those are expected to have user edits that the
+      // push workflow handles separately.
+      if (repo.kind === RepoKind.OpenSource) {
+        const clean = await this.git.isClean(repo.local_path);
+        if (!clean) {
+          this.deps.logger.warn("repo.refresh.dirty_skip", {
+            repo_id: repoId,
+            repo_name: repo.name,
+            detail:
+              "open-source repo has uncommitted local edits; skipping pull to avoid overwriting them"
+          });
+          const skills = this.skills.listByRepo(repoId);
+          this.deps.events.emit({
+            type: EventType.RepoRefreshed,
+            payload: { repo, changed: false }
+          });
+          return { repo, skills, changed: false };
+        }
       }
 
       const before = repo.head_hash;
@@ -269,6 +307,10 @@ export class RepoService {
    * Unregister a repo. Cascades to skills (FK). Does NOT delete the
    * local clone from disk — user may want to keep it for other purposes.
    * (The row is gone so Astack won't reuse it; user can `rm -rf` manually.)
+   *
+   * When the removed URL matches a builtin seed, we persist the user's
+   * decision in `seed_decisions` so SeedService skips it on next start
+   * instead of re-seeding the repo the user just removed.
    */
   remove(repoId: number): void {
     const repo = this.mustFindById(repoId);
@@ -279,6 +321,18 @@ export class RepoService {
       });
     }
     this.ttlCache.delete(repoId);
+
+    // Respect user's decision if this was a builtin seed — otherwise it
+    // would auto-reinstall on the next daemon restart.
+    if (isBuiltinSeedUrl(repo.git_url)) {
+      this.deps.db
+        .prepare<[string, string]>(
+          `INSERT OR REPLACE INTO seed_decisions (url, decision)
+           VALUES (?, ?)`
+        )
+        .run(repo.git_url, "removed");
+    }
+
     this.deps.events.emit({
       type: EventType.RepoRemoved,
       payload: { repo_id: repo.id }

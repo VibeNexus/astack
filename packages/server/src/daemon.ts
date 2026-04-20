@@ -28,6 +28,7 @@ import type { ServerConfig } from "./config.js";
 import { openDatabase } from "./db/connection.js";
 import { createApp, type AppInstance } from "./http/app.js";
 import type { Logger } from "./logger.js";
+import { SeedService } from "./services/seed.js";
 
 export interface DaemonHandle {
   config: ServerConfig;
@@ -36,9 +37,19 @@ export interface DaemonHandle {
   close(): Promise<void>;
 }
 
+export interface StartDaemonOptions {
+  /**
+   * Whether to run SeedService on startup. Defaults to true. Tests
+   * that spin up a real daemon should pass `false` to avoid real
+   * `git clone` of the builtin seeds.
+   */
+  seeds?: boolean;
+}
+
 export async function startDaemon(
   config: ServerConfig,
-  logger: Logger
+  logger: Logger,
+  opts: StartDaemonOptions = {}
 ): Promise<DaemonHandle> {
   ensureDataDir(config);
 
@@ -79,6 +90,26 @@ export async function startDaemon(
   );
 
   writePidFile(config, process.pid);
+
+  // Kick off builtin-seed bootstrap in the background. The HTTP server
+  // is already listening at this point, so users see a responsive
+  // dashboard immediately; repos appear via SSE as they become ready.
+  // Failures are swallowed here — SeedService itself emits a
+  // SeedCompleted event with the failure list.
+  if (opts.seeds !== false) {
+    const seedService = new SeedService({
+      db: app.container.db,
+      config,
+      repoService: app.container.repoService,
+      events: app.container.events,
+      logger
+    });
+    void seedService.seedBuiltinRepos().catch((err) => {
+      logger.error("seed.unexpected_failure", {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    });
+  }
 
   const handle: DaemonHandle = {
     config,

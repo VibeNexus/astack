@@ -15,6 +15,7 @@ import { api } from "../lib/api.js";
 import { useEventListener } from "../lib/sse.js";
 
 import { CommandPalette } from "./CommandPalette.js";
+import { SeedBanner } from "./SeedBanner.js";
 import { Sidebar } from "./Sidebar.js";
 
 export function AppShell(): React.JSX.Element {
@@ -112,6 +113,7 @@ export function AppShell(): React.JSX.Element {
         aria-label="Main content"
       >
         <div className="max-w-content-max mx-auto px-6 py-6">
+          <SeedBanner />
           <Outlet />
         </div>
       </main>

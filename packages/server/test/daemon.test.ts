@@ -107,7 +107,7 @@ describe("startDaemon", () => {
 
   it("binds the port, writes pidfile, and serves /health", async () => {
     const cfg = buildConfig(dir.path, port);
-    const handle = await startDaemon(cfg, nullLogger());
+    const handle = await startDaemon(cfg, nullLogger(), { seeds: false });
     try {
       expect(readPidFile(cfg)).toBe(process.pid);
       expect(await isPortInUse("127.0.0.1", port)).toBe(true);
@@ -124,9 +124,11 @@ describe("startDaemon", () => {
 
   it("refuses to start when port is already in use", async () => {
     const cfg = buildConfig(dir.path, port);
-    const handle = await startDaemon(cfg, nullLogger());
+    const handle = await startDaemon(cfg, nullLogger(), { seeds: false });
     try {
-      await expect(startDaemon(cfg, nullLogger())).rejects.toMatchObject({
+      await expect(
+        startDaemon(cfg, nullLogger(), { seeds: false })
+      ).rejects.toMatchObject({
         code: "SERVER_ALREADY_RUNNING"
       });
     } finally {
