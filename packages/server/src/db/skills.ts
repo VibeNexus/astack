@@ -26,10 +26,16 @@ export class SkillRepository {
     type: SkillType;
     name: string;
     path: string;
-    description: string | null;
+    /**
+     * Human-readable description from frontmatter. Defaults to null when
+     * omitted — tests and push-time upserts that don't have fresh
+     * frontmatter in hand just skip this field.
+     */
+    description?: string | null;
     version: string | null;
     updated_at: string | null;
   }): Skill {
+    const description = input.description ?? null;
     const row = this.db
       .prepare<
         [
@@ -57,7 +63,7 @@ export class SkillRepository {
         input.type,
         input.name,
         input.path,
-        input.description,
+        description,
         input.version,
         input.updated_at
       );

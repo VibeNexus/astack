@@ -32,6 +32,13 @@ v0.1.0 — 规划完成，进入实现阶段。设计文档在 `docs/asset/desig
 - **`@astack/cli`** — `astack` 命令行工具
 - **`@astack/web`** — React + Tailwind dashboard
 
+## Requirements
+
+- **Node.js ≥ 22.13.0**（v0.2 起用 Node 自带的 `node:sqlite`，v22.13 之前没有此模块）
+- **pnpm ≥ 10.0.0**
+
+守卫已加在 `astack-server start`：版本不符会立即退出并打印升级指引，不会出现模糊的 `node:sqlite not found` 错误。
+
 ## Development
 
 ```bash

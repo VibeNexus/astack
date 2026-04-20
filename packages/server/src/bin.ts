@@ -12,6 +12,11 @@
  *   0  success / daemon running
  *   1  error
  *   2  not running (for status)
+ *
+ * Before doing any real work we hard-check the Node.js version: node:sqlite
+ * (added in 22.5, unflagged in 22.13) is a required runtime dependency since
+ * v0.2. Running on older Node would surface an obscure import failure; we
+ * want a friendly message instead.
  */
 
 import fs from "node:fs";
@@ -29,7 +34,53 @@ import {
 } from "./daemon.js";
 import { createLogger } from "./logger.js";
 
+/**
+ * Parse a node version string like `v22.13.0` or `24.14.1`. Exported
+ * for unit tests.
+ */
+export function parseNodeVersion(raw: string): {
+  ok: boolean;
+  parsed: { major: number; minor: number; patch: number };
+} {
+  const m = raw.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  const parsed = {
+    major: m ? parseInt(m[1]!, 10) : 0,
+    minor: m ? parseInt(m[2]!, 10) : 0,
+    patch: m ? parseInt(m[3]!, 10) : 0
+  };
+  if (!m) return { ok: false, parsed };
+  const { major, minor } = parsed;
+  // >= 22.13 OR any major >= 23
+  const ok = major > 22 || (major === 22 && minor >= 13);
+  return { ok, parsed };
+}
+
+/**
+ * Refuse to run on Node < 22.13. Exported for testability.
+ * Called at the top of main(); tests can invoke it directly with
+ * injected args.
+ */
+export function checkNodeVersion(
+  raw: string = process.versions.node,
+  exit: (code: number) => never = process.exit.bind(process) as (c: number) => never,
+  write: (msg: string) => void = (m) => process.stderr.write(m)
+): void {
+  const { ok, parsed } = parseNodeVersion(raw);
+  if (ok) return;
+  write(
+    [
+      `astack-server requires Node.js >= 22.13.0 (node:sqlite not available below).`,
+      `Current: ${raw} (parsed as ${parsed.major}.${parsed.minor}.${parsed.patch}).`,
+      `Upgrade: https://nodejs.org/ or use nvm / fnm to switch.`,
+      ""
+    ].join("\n")
+  );
+  exit(1);
+}
+
+
 async function main(): Promise<void> {
+  checkNodeVersion();
   const [, , command = "start", ...rest] = process.argv;
   const config = loadConfig();
 
