@@ -30,9 +30,9 @@
 
 ## 5. 当前活跃迭代
 
-**v0.4 — Harness Tab + 系统级 Skill 首次落地**（IN_REVIEW，2026-04-20，[spec](docs/version/v0.4-harness-tab.md)）
+（无活跃迭代）
 
-**最近完成：** v0.3 — 项目详情页重设计 + Web 端完整管理能力（2026-04-20，[spec](docs/version/v0.3-project-detail-redesign.md)）
+**最近完成：** v0.4 — Harness Tab + 系统级 Skill 首次落地（2026-04-20，[spec](docs/version/v0.4-harness-tab.md)）
 
 ## 6. gstack
 
