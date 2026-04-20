@@ -556,32 +556,64 @@ function SkillGroup({
         </span>
       </button>
       {open ? (
-        // Two columns gives each skill + description room to breathe.
-        // Three-column grid forced descriptions to collide/truncate.
-        <div
+        // Single column, definition-list shape: name on the left, full
+        // description on the right. The old 2-col grid had to line-clamp
+        // descriptions (the ones in the screenshot showed "platform..."
+        // cut off), which killed the "compare two skills" task.
+        //
+        // This is what Linear / Stripe / Apple docs all do for the same
+        // job. Information density is lower per row, but row count is
+        // bounded by the section collapse so the page stays scannable.
+        <dl
           id={`${headingId}-panel`}
           role="region"
           aria-labelledby={headingId}
-          className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3.5"
+          className="divide-y divide-line-subtle"
         >
           {items.map((s) => (
             <SkillRow key={s.id} skill={s} />
           ))}
-        </div>
+        </dl>
       ) : null}
     </section>
   );
 }
 
+/**
+ * A single (name, description) row inside a SkillGroup.
+ *
+ * Layout: name pinned to a fixed-width left column so all names line up
+ * vertically for scanning; description wraps freely in the right column
+ * so it's never truncated.
+ *
+ *   accessibility        Design, implement, and audit inclusive digital
+ *                        products using WCAG 2.2 Level AA standards...
+ *   agent-eval           Head-to-head comparison of coding agents
+ *                        (Claude Code, Aider, Codex, etc.)...
+ *
+ * On narrow viewports (< md) the two columns stack vertically so the
+ * description still gets its full width.
+ */
 function SkillRow({ skill }: { skill: Skill }): React.JSX.Element {
   return (
-    <div className="min-w-0">
-      <div className="font-mono text-sm text-fg-primary">{skill.name}</div>
+    <div
+      className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]
+        gap-x-6 gap-y-1 py-3"
+    >
+      <dt className="font-mono text-sm text-fg-primary break-words">
+        {skill.name}
+      </dt>
       {skill.description ? (
-        <div className="mt-0.5 text-xs text-fg-tertiary leading-snug line-clamp-2">
+        // fg-secondary (not tertiary) — tertiary only hit ~3.4:1 contrast,
+        // which fails WCAG AA for body text. Secondary is ~6.2:1.
+        <dd className="text-sm text-fg-secondary leading-relaxed max-w-[68ch]">
           {skill.description}
-        </div>
-      ) : null}
+        </dd>
+      ) : (
+        <dd className="text-sm text-fg-quaternary italic">
+          No description.
+        </dd>
+      )}
     </div>
   );
 }
