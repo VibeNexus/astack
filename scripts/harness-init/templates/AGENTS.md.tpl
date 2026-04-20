@@ -1,10 +1,10 @@
-# astack
+# {{PROJECT_NAME}}
 
 > 本文件是项目的导航地图，详细内容通过链接指向对应文档。
 
 ## 1. 项目定位
 
-待补充
+{{PROJECT_DESC}}
 
 ## 2. 核心开发原则
 
@@ -23,53 +23,11 @@
 
 | 文档 | 内容 | 维护方式 |
 |------|------|---------|
-| [`docs/version/INDEX.md`](docs/version/INDEX.md) | 迭代状态表 | `/spec`、`/mr` 自动维护 |
+| [`docs/version/INDEX.md`](docs/version/INDEX.md) | 迭代状态表 + 变更记录 | `/spec`、`/mr` 自动维护 |
 | [`docs/version/BOUNDARIES.md`](docs/version/BOUNDARIES.md) | 迭代边界规则 | `/spec` 自动维护 |
 | [`docs/retro/golden-rules.md`](docs/retro/golden-rules.md) | 黄金法则（活跃规则） | `/spec_review`、`/code_review` 自动沉淀 |
 | [`docs/retro/patterns.md`](docs/retro/patterns.md) | 反模式库 | 同上 |
 
 ## 5. 当前活跃迭代
 
-**v0.4 — Harness Tab + 系统级 Skill 首次落地**（IN_REVIEW，2026-04-20，[spec](docs/version/v0.4-harness-tab.md)）
-
-**最近完成：** v0.3 — 项目详情页重设计 + Web 端完整管理能力（2026-04-20，[spec](docs/version/v0.3-project-detail-redesign.md)）
-
-## 6. gstack
-
-Use the `/browse` skill from gstack for **all web browsing**. Never use `mcp__claude-in-chrome__*` tools.
-
-### Available Skills
-
-- `/office-hours`
-- `/plan-ceo-review`
-- `/plan-eng-review`
-- `/plan-design-review`
-- `/design-consultation`
-- `/design-shotgun`
-- `/design-html`
-- `/review`
-- `/ship`
-- `/land-and-deploy`
-- `/canary`
-- `/benchmark`
-- `/browse`
-- `/connect-chrome`
-- `/qa`
-- `/qa-only`
-- `/design-review`
-- `/setup-browser-cookies`
-- `/setup-deploy`
-- `/retro`
-- `/investigate`
-- `/document-release`
-- `/codex`
-- `/cso`
-- `/autoplan`
-- `/plan-devex-review`
-- `/devex-review`
-- `/careful`
-- `/freeze`
-- `/guard`
-- `/unfreeze`
-- `/gstack-upgrade`
-- `/learn`
+（无活跃迭代）
