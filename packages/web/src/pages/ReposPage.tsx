@@ -3,14 +3,16 @@ import type * as React from "react";
  * Repos page — Graphite UI v0.3.
  *
  * Card anatomy:
- *   ┌──────────────────────────────────────────────────────┐
- *   │  anthropic-skills                               ⋯    │
- *   │  ○ read-only  ·  17 skills                           │
- *   │                                                      │
- *   │  github.com/anthropics/skills                        │
- *   │  2c7ec5e · synced 2h ago                             │
- *   └──────────────────────────────────────────────────────┘
+ *   ┌────────────────────────────────────────────────────────────────┐
+ *   │  anthropic-skills  [BUILT-IN] [OPEN SOURCE]              ⋯     │
+ *   │  ○ read-only  ·  17 skills                                     │
+ *   │                                                                │
+ *   │  github.com/anthropics/skills                                  │
+ *   │  2c7ec5e · synced 2h ago                                       │
+ *   └────────────────────────────────────────────────────────────────┘
  *
+ *  - Two orthogonal tags: provenance (Built-in) + ownership (Custom /
+ *    Open source). Seeded repos show both.
  *  - Entire card is the expand affordance (click anywhere).
  *  - Actions move into a ⋯ menu (Refresh / Remove) so the card
  *    header stays clean.
@@ -363,28 +365,41 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
 }
 
 /**
- * Source-of-origin tag next to the repo title.
+ * Source-of-origin tags next to the repo title.
  *
- * Three mutually-exclusive labels, same visual shape, different tones:
- *   - "Built-in"    — one of our seeded repos (URL match). Green (accent).
- *   - "Open source" — user-registered third-party repo (kind=open-source
- *                     and not a seed). Amber (warn) — it's read-only,
- *                     the color hints "handle with care".
- *   - "Custom"      — user's own repo (kind=custom). Blue (info) — it's
- *                     theirs, two-way sync enabled.
+ * Two orthogonal dimensions, each rendered as its own tag:
  *
- * Every repo gets exactly one tag now, so the title row always has a
- * consistent anchor on the right of the name.
+ *   Distribution — is this repo shipped by us, or registered by the user?
+ *     - BUILT-IN  (accent/green)  the URL matches a seed
+ *     - (no tag)                   user-registered
+ *
+ *   Ownership — does the user own it (push allowed) or not?
+ *     - CUSTOM       (info/blue)   kind=custom, two-way sync
+ *     - OPEN SOURCE  (warn/amber)  kind=open-source, pull-only
+ *
+ * The two axes compose: the three seeded repos are Built-in AND Open
+ * source, so they show both tags. A user-registered third-party repo
+ * shows only "Open source". A user's own repo shows only "Custom".
+ *
+ * This is deliberate — Built-in is a provenance claim (someone trusted
+ * enough to ship by default), Open source is a capability claim (you
+ * can't push to it). Collapsing the two into one tag hid the fact that
+ * the seeded repos are also read-only.
  */
 function RepoSourceTag({ repo }: { repo: SkillRepo }): React.JSX.Element {
   const isBuiltin = isBuiltinSeedUrl(repo.git_url);
-  if (isBuiltin) {
-    return <SourceTag label="Built-in" tone="accent" />;
-  }
-  if (repo.kind === "open-source") {
-    return <SourceTag label="Open source" tone="warn" />;
-  }
-  return <SourceTag label="Custom" tone="info" />;
+  const isOpenSource = repo.kind === "open-source";
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {isBuiltin ? <SourceTag label="Built-in" tone="accent" /> : null}
+      {isOpenSource ? (
+        <SourceTag label="Open source" tone="warn" />
+      ) : (
+        <SourceTag label="Custom" tone="info" />
+      )}
+    </span>
+  );
 }
 
 /**
