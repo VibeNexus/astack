@@ -13,7 +13,8 @@ import {
   Card,
   EmptyState,
   Skeleton
-} from "../components/ui.js";
+} from "../components/ui/index.js";
+import { PathAutocomplete } from "../components/PathAutocomplete.js";
 import { api, AstackError } from "../lib/api.js";
 import { useEventListener } from "../lib/sse.js";
 import { useToast } from "../lib/toast.js";
@@ -184,14 +185,16 @@ function RegisterProjectDialog({
         </div>
         <label className="block text-sm">
           <div className="text-text-secondary mb-1">Absolute path</div>
-          <input
-            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent"
-            placeholder="/Users/you/code/my-project"
+          <PathAutocomplete
             value={path}
-            onChange={(e) => setPath(e.target.value)}
+            onChange={setPath}
+            onSubmit={() => void submit()}
             disabled={busy}
             autoFocus
           />
+          <div className="text-xs text-text-muted mt-1.5">
+            Type a path, or press ↓ to browse. Tab / Enter to complete.
+          </div>
         </label>
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="ghost" onClick={onClose} disabled={busy}>

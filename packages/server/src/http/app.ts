@@ -32,6 +32,7 @@ import { SyncService } from "../services/sync.js";
 import type { ServiceContainer } from "./container.js";
 import { buildErrorHandler } from "./errors.js";
 import { eventsRoutes } from "./routes.events.js";
+import { fsRoutes } from "./routes.fs.js";
 import { linksRoutes } from "./routes.links.js";
 import { projectsRoutes } from "./routes.projects.js";
 import { reposRoutes } from "./routes.repos.js";
@@ -127,6 +128,7 @@ export function createApp(opts: CreateAppOptions): AppInstance {
   app.route("/api/projects", projectsRoutes(container));
   app.route("/api/projects", subscriptionsRoutes(container));
   app.route("/api/projects", linksRoutes(container));
+  app.route("/api/fs", fsRoutes(container));
   app.route("/api", eventsRoutes(container));
 
   // Static dashboard: serve the @astack/web build when present. The CLI's

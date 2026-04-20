@@ -22,6 +22,7 @@ import {
   type ListProjectsResponse,
   type ListRepoSkillsResponse,
   type ListReposResponse,
+  type FsListResponse,
   type PushResponse,
   type RefreshRepoResponse,
   type RegisterProjectRequest,
@@ -127,6 +128,16 @@ export const api = {
     request("DELETE", `/api/projects/${id}`),
   projectStatus: (id: number): Promise<GetProjectStatusResponse> =>
     request("GET", `/api/projects/${id}/status`),
+
+  // Filesystem navigation (powers path autocomplete in Register Project).
+  fsList: (
+    q: { path?: string; show_hidden?: boolean } = {}
+  ): Promise<FsListResponse> => {
+    const params: Record<string, string> = {};
+    if (q.path !== undefined) params.path = q.path;
+    if (q.show_hidden) params.show_hidden = "1";
+    return request("GET", `/api/fs/list${qs(params)}`);
+  },
 
   // Subscriptions / sync / push / resolve
   subscribe: (
