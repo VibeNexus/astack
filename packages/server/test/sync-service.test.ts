@@ -429,6 +429,35 @@ describe("SyncService", () => {
       const { subscriptions } = h.syncService.listWithState(s.projectId);
       expect(subscriptions[0].state).toBe(SubscriptionState.LocalAhead);
     });
+
+    // v0.5 bootstrap-adopted skills: subscription exists, working copy
+    // exists on disk with user content, but sync_logs has no prior success.
+    // Pre-v0.5 this fell into the base=null branch → Pending ("awaiting
+    // initial sync"), which is wrong — the project IS already initialised,
+    // the content is just drifted. Classify as Synced/Conflict so the UI
+    // routes the user into the resolve flow.
+    it("v0.5 bootstrap-adopted: local matches upstream → Synced (no sync history)", async () => {
+      const s = await seedCommand();
+      // Simulate bootstrap: working copy materialised with identical
+      // content to upstream, but no pullOne was ever run → no sync_log.
+      writeWorking(s.projectPath, "commands/code_review.md", "v1 content\n");
+      const { subscriptions } = h.syncService.listWithState(s.projectId);
+      expect(subscriptions[0].state).toBe(SubscriptionState.Synced);
+    });
+
+    it("v0.5 bootstrap-adopted: local drifts from upstream → Conflict (no sync history)", async () => {
+      const s = await seedCommand();
+      // Simulate bootstrap adopting a legacy project: working copy
+      // exists but user had edited it before astack took over.
+      writeWorking(
+        s.projectPath,
+        "commands/code_review.md",
+        "user's pre-astack edits\n"
+      );
+      const { subscriptions } = h.syncService.listWithState(s.projectId);
+      expect(subscriptions[0].state).toBe(SubscriptionState.Conflict);
+      expect(subscriptions[0].state_detail).toMatch(/resolve/i);
+    });
   });
 
   // ---------- open-source (read-only) repo gate ----------

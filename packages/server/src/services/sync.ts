@@ -800,10 +800,24 @@ export class SyncService {
 
     // local !== upstream. Decide via 3-way.
     if (base === null) {
-      // No prior successful sync — treat as Pending to avoid false conflicts.
+      // No prior successful sync AND local !== upstream. Two realities
+      // produce this combo:
+      //   - v0.5 bootstrap adopted a drifted legacy skill (the common case):
+      //     the user's .claude/skills/<name>/ has been edited relative to
+      //     what the registered repo publishes. They need to choose
+      //     keep-local (push), use-remote (overwrite), or manual merge.
+      //   - A brand-new subscription race: sync_logs row not yet written
+      //     but fs is already drifted (rare; recovers on next sync).
+      //
+      // Classify as Conflict (spec §5 §A5 acceptance criteria) rather
+      // than Pending. Pending means "nothing has happened"; that's wrong
+      // for an adopted-with-drift skill. The Resolve flow (existing UI)
+      // then routes keep-local / use-remote / manual cleanly — including
+      // for open-source repos where Push is rejected.
       return {
-        state: SubscriptionState.Pending,
-        state_detail: "awaiting initial sync",
+        state: SubscriptionState.Conflict,
+        state_detail:
+          "local content differs from upstream (no sync history); resolve required",
         local,
         upstream,
         base
@@ -893,12 +907,34 @@ export class SyncService {
 
   // ---------- File / hash helpers ----------
 
-  /** Absolute path of the working copy for a given skill in a project. */
+  /**
+   * Absolute path of the working copy for a given skill in a project.
+   *
+   * We use a CANONICAL layout for working copies — NOT `skill.path` from
+   * the repo — because `skill.path` reflects the **upstream repo's**
+   * scan_config, which may be flat (gstack: `autoplan/SKILL.md` at repo
+   * root) or custom-rooted. A project's working tree follows the standard
+   * Claude convention regardless of where the skill came from:
+   *
+   *   .claude/skills/<name>/      for type='skill'   (dir)
+   *   .claude/commands/<name>.md  for type='command'
+   *   .claude/agents/<name>.md    for type='agent'
+   *
+   * This alignment is what makes v0.5 bootstrap work: the local file
+   * scanner (BOOTSTRAP_SCAN_CONFIG) emits `skills/<name>`, subscribe
+   * inserts into SQLite, and subsequent `hashWorking` lookups land on
+   * the exact same on-disk path the scanner saw.
+   *
+   * Pre-v0.5 this was `path.join(..., skill.path)` which conflated repo
+   * layout with project layout; broke any flat-layout repo (see the
+   * PrivSeal/gstack "working copy not yet materialized" bug).
+   */
   private workingPath(
     project: { path: string; primary_tool: string },
     skill: Skill
   ): string {
-    return path.join(project.path, project.primary_tool, skill.path);
+    const rel = canonicalWorkingRelPath(skill);
+    return path.join(project.path, project.primary_tool, rel);
   }
 
   /** Absolute path of the upstream mirror copy of a skill. */
@@ -910,6 +946,8 @@ export class SyncService {
         { repo_id: repo.id }
       );
     }
+    // Upstream path DOES use skill.path — the scan_config is the source
+    // of truth for how the repo laid its files out on disk.
     return path.join(repo.local_path, skill.path);
   }
 
@@ -1043,6 +1081,31 @@ export class SyncService {
 }
 
 // ---------- helpers ----------
+
+/**
+ * Canonical relative path inside `<project>/<primary_tool>/` for a skill,
+ * derived from its type + name only. Used by SyncService.workingPath so
+ * that repos with non-standard layouts (flat, custom-rooted) still land
+ * in the right place in the user's project tree.
+ *
+ * Mirrors the shape BOOTSTRAP_SCAN_CONFIG expects when scanning a
+ * project's `.claude/`. See v0.5 spec §A6.
+ */
+function canonicalWorkingRelPath(skill: Skill): string {
+  switch (skill.type) {
+    case SkillType.Skill:
+      return path.posix.join("skills", skill.name);
+    case SkillType.Command:
+      return path.posix.join("commands", `${skill.name}.md`);
+    case SkillType.Agent:
+      return path.posix.join("agents", `${skill.name}.md`);
+    default: {
+      // Exhaustiveness: new SkillType additions should re-visit this.
+      const _exhaustive: never = skill.type;
+      return _exhaustive;
+    }
+  }
+}
 
 function readText(p: string): string {
   try {
