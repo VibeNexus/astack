@@ -7,7 +7,7 @@
     "astack": "./dist/bin.js"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && chmod +x dist/bin.js",
     "dev": "tsc -b --watch",
     "clean": "rm -rf dist *.tsbuildinfo",
     "test": "vitest run",

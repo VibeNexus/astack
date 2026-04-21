@@ -30,7 +30,7 @@
 
 ## 5. 当前活跃迭代
 
-（无活跃迭代）
+**主路径实施完成：** v0.5 — Subscription Bootstrap for Legacy Projects（2026-04-21，[spec](docs/version/v0.5-subscription-bootstrap.md)）— PR1–PR5 已落地，PR6 E2E 规划中
 
 **最近完成：** v0.4 — Harness Tab + 系统级 Skill 首次落地（2026-04-20，[spec](docs/version/v0.4-harness-tab.md)）
 

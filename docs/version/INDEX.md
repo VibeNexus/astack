@@ -4,6 +4,7 @@
 
 | 迭代 | 标题 | 状态 | 文档 | 创建日期 |
 |------|------|------|------|---------|
+| v0.5 | Subscription Bootstrap for Legacy Projects | IMPLEMENTED (PR1–PR5)；PR6 E2E 规划 | [v0.5-subscription-bootstrap.md](./v0.5-subscription-bootstrap.md) | 2026-04-21 |
 | v0.4 | Harness Tab + 系统级 Skill 首次落地 | SHIPPED | [v0.4-harness-tab.md](./v0.4-harness-tab.md) | 2026-04-20 |
 | v0.3 | 项目详情页重设计 + Web 端完整管理能力 | SHIPPED | [v0.3-project-detail-redesign.md](./v0.3-project-detail-redesign.md) | 2026-04-20 |
 | v0.2 | sqlite 换底 + 多仓库目录兼容 | SHIPPED | [v0.2-sqlite-and-multi-repo.md](./v0.2-sqlite-and-multi-repo.md) | 2026-04-19 |

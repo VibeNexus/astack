@@ -22,7 +22,13 @@ import type * as React from "react";
  *   PR9 — Mobile responsive + CommandPalette extensions + a11y polish
  */
 
-import type { GetProjectStatusResponse, SubscribeResponse, SyncResponse } from "@astack/shared";
+import type {
+  BootstrapResolution,
+  GetProjectStatusResponse,
+  ProjectBootstrapResult,
+  SubscribeResponse,
+  SyncResponse
+} from "@astack/shared";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
@@ -58,6 +64,9 @@ export function ProjectDetailPage(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
   const projectId = Number(id);
   const [status, setStatus] = useState<GetProjectStatusResponse | null>(null);
+  const [bootstrap, setBootstrap] = useState<ProjectBootstrapResult | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
   const activeTab = validateTab(params.get("tab"));
@@ -95,15 +104,45 @@ export function ProjectDetailPage(): React.JSX.Element {
     }
   }, [projectId]);
 
+  /**
+   * v0.5: refresh the bootstrap result. Runs in parallel with `load`;
+   * independent so SSE events that only touch one domain don't force the
+   * other to refetch.
+   */
+  const loadBootstrap = useCallback(async () => {
+    if (!Number.isFinite(projectId) || projectId <= 0) return;
+    try {
+      const res = await api.inspectBootstrap(projectId);
+      setBootstrap(res);
+    } catch {
+      // Bootstrap endpoint is non-critical for the tab — swallow errors
+      // so a transient /bootstrap failure doesn't block the rest of the UI.
+      setBootstrap(null);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadBootstrap();
+  }, [load, loadBootstrap]);
 
   useEventListener("skill.updated", () => void load());
   useEventListener("linked_dir.created", () => void load());
   useEventListener("linked_dir.removed", () => void load());
   useEventListener("linked_dir.broken", () => void load());
   useEventListener("conflict.detected", () => void load());
+  // v0.5 bootstrap SSE — invalidate both status + bootstrap queries
+  // (spec §A7). `project_id` check avoids cross-project chatter.
+  useEventListener("subscriptions.bootstrap_needs_resolution", (e) => {
+    if (e.payload.project_id !== projectId) return;
+    void load();
+    void loadBootstrap();
+  });
+  useEventListener("subscriptions.bootstrap_resolved", (e) => {
+    if (e.payload.project_id !== projectId) return;
+    void load();
+    void loadBootstrap();
+  });
 
   const actions = useProjectActions(projectId, load);
 
@@ -304,9 +343,31 @@ export function ProjectDetailPage(): React.JSX.Element {
       <TabPanel tabId="subscriptions" activeId={activeTab} idPrefix="project-detail">
         <SubscriptionsPanel
           status={status}
+          bootstrap={bootstrap}
           projectId={projectId}
           onUnsubscribe={handleUnsubscribe}
           onBrowse={() => setBrowseOpen(true)}
+          onRescan={async () => {
+            try {
+              await api.scanBootstrap(projectId);
+              // SSE (bootstrap_* events) will invalidate both queries,
+              // but kick off an immediate refresh so the button's "done"
+              // state lines up with visible UI updates.
+              await Promise.all([load(), loadBootstrap()]);
+              toast.ok("Re-scan complete");
+            } catch (err) {
+              toast.error(
+                "Re-scan failed",
+                err instanceof Error ? err.message : String(err)
+              );
+            }
+          }}
+          onBootstrapResolve={async (resolutions: BootstrapResolution[]) => {
+            const result = await api.resolveBootstrap(projectId, resolutions);
+            // Refresh local state proactively; SSE will also fire.
+            await Promise.all([load(), loadBootstrap()]);
+            return result;
+          }}
         />
       </TabPanel>
 

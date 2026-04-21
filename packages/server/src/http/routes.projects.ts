@@ -6,18 +6,23 @@
  */
 
 import {
+  IgnoreBootstrapRequestSchema,
   ListProjectsQuerySchema,
   ListSyncLogsQuerySchema,
   ProjectParamsSchema,
   ProjectSkillParamsSchema,
   RegisterProjectRequestSchema,
+  ResolveBootstrapRequestSchema,
   SubscriptionState,
+  type ApplyResolutionsResult,
   type DeleteProjectResponse,
   type GetProjectStatusResponse,
   type GetSkillDiffResponse,
   type ListProjectsResponse,
   type ListSyncLogsResponse,
+  type ProjectBootstrapResult,
   type RegisterProjectResponse,
+  type ScanAndAutoSubscribeResult,
   type SubscriptionWithState
 } from "@astack/shared";
 import { zValidator } from "./validator.js";
@@ -149,6 +154,73 @@ export function projectsRoutes(c: ServiceContainer): Hono {
       c.projectService.mustFindById(id);
       const state = await c.systemSkillService.seed(id, "harness-init");
       return ctx.json(state);
+    }
+  );
+
+  // ---------- v0.5 bootstrap endpoints (PR3) ----------
+
+  // GET /api/projects/:id/bootstrap — pure scan, no side effects.
+  // The 4 endpoints all serialise via projectBootstrapLockKey; see §A8/A9.
+  app.get(
+    "/:id/bootstrap",
+    zValidator("param", ProjectParamsSchema),
+    async (ctx) => {
+      const { id } = ctx.req.valid("param");
+      c.projectService.mustFindById(id);
+      const result: ProjectBootstrapResult =
+        await c.projectBootstrapService.scan(id);
+      ctx.header("Cache-Control", "no-store");
+      return ctx.json(result);
+    }
+  );
+
+  // POST /api/projects/:id/bootstrap/scan — scan + auto-subscribe matched.
+  // Writes subscriptions for matched skills and emits the bootstrap_*
+  // SSE event chosen per §A7.
+  app.post(
+    "/:id/bootstrap/scan",
+    zValidator("param", ProjectParamsSchema),
+    async (ctx) => {
+      const { id } = ctx.req.valid("param");
+      c.projectService.mustFindById(id);
+      const result: ScanAndAutoSubscribeResult =
+        await c.projectBootstrapService.scanAndAutoSubscribe(id);
+      return ctx.json(result);
+    }
+  );
+
+  // POST /api/projects/:id/bootstrap/resolve — apply user resolutions.
+  // Per-resolution failures are returned as `failed[]` inside a 200 body
+  // (partial success), aligned with v0.3 subscribeBatch semantics.
+  app.post(
+    "/:id/bootstrap/resolve",
+    zValidator("param", ProjectParamsSchema),
+    zValidator("json", ResolveBootstrapRequestSchema),
+    async (ctx) => {
+      const { id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
+      c.projectService.mustFindById(id);
+      const result: ApplyResolutionsResult =
+        await c.projectBootstrapService.applyResolutions(
+          id,
+          body.resolutions
+        );
+      return ctx.json(result);
+    }
+  );
+
+  // POST /api/projects/:id/bootstrap/ignore — explicit ignore batch.
+  app.post(
+    "/:id/bootstrap/ignore",
+    zValidator("param", ProjectParamsSchema),
+    zValidator("json", IgnoreBootstrapRequestSchema),
+    async (ctx) => {
+      const { id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
+      c.projectService.mustFindById(id);
+      const result: ApplyResolutionsResult =
+        await c.projectBootstrapService.ignore(id, body.entries);
+      return ctx.json(result);
     }
   );
 

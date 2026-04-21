@@ -37,17 +37,35 @@ const ManifestSubscriptionSchema = z.object({
   name: z.string().min(1)
 });
 
+/**
+ * v0.5: an entry the user has explicitly told bootstrap to leave alone.
+ *
+ * Stored under `<project>/<primary_tool>/.astack.json` → `ignored_local`.
+ * Bootstrap re-scan filters these out so they don't reappear in the
+ * resolve-drawer.  See spec §A3 for why this lives in the manifest (team
+ * coordination via git) rather than SQLite.
+ */
+const IgnoredLocalEntrySchema = z.object({
+  type: z.enum([SkillType.Command, SkillType.Skill, SkillType.Agent]),
+  name: z.string().min(1),
+  /** ISO timestamp recorded for debugging — purely informational. */
+  ignored_at: z.string().optional()
+});
+
 export const AstackManifestSchema = z.object({
   project_id: z.number().int().positive(),
   server_url: z.string().min(1),
   primary_tool: z.string().default(".claude"),
   linked_tools: z.array(z.string()).default([]),
   subscriptions: z.array(ManifestSubscriptionSchema).default([]),
+  /** v0.5 — see §A3. Default `[]` keeps reads of older manifests safe. */
+  ignored_local: z.array(IgnoredLocalEntrySchema).default([]),
   last_synced: z.string().nullable().default(null)
 });
 
 export type AstackManifest = z.infer<typeof AstackManifestSchema>;
 export type ManifestSubscription = z.infer<typeof ManifestSubscriptionSchema>;
+export type IgnoredLocalEntry = z.infer<typeof IgnoredLocalEntrySchema>;
 
 /** Relative location under the project root. */
 export const MANIFEST_RELATIVE_PATH = ".claude/.astack.json";
@@ -124,6 +142,26 @@ export function dedupeSubscriptions(
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(s);
+  }
+  return out;
+}
+
+/**
+ * Strip duplicate ignored_local entries by (type, name), preserving the
+ * first occurrence (so the original `ignored_at` survives). Used by
+ * ProjectBootstrapService when appending new ignores to existing manifest
+ * state — see v0.5 spec §A3.
+ */
+export function dedupeIgnoredLocal(
+  entries: ReadonlyArray<IgnoredLocalEntry>
+): IgnoredLocalEntry[] {
+  const seen = new Set<string>();
+  const out: IgnoredLocalEntry[] = [];
+  for (const e of entries) {
+    const key = `${e.type}/${e.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
   }
   return out;
 }

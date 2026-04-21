@@ -268,7 +268,9 @@ export class RepoService {
             detail:
               "open-source repo has uncommitted local edits; skipping pull to avoid overwriting them"
           });
-          const skills = this.skills.listByRepo(repoId);
+          const skills = this.filterOutSystemSkills(
+            this.skills.listByRepo(repoId)
+          );
           this.deps.events.emit({
             type: EventType.RepoRefreshed,
             payload: { repo, changed: false }
@@ -366,7 +368,22 @@ export class RepoService {
   listSkills(repoId: number): Skill[] {
     // Validate repo existence so caller gets REPO_NOT_FOUND, not silent [].
     this.mustFindById(repoId);
-    return this.skills.listByRepo(repoId);
+    return this.filterOutSystemSkills(this.skills.listByRepo(repoId));
+  }
+
+  /**
+   * Defence-in-depth: hide repo skills whose name collides with a reserved
+   * system-skill id (v0.4 A9). Scanner already excludes them on fresh scans
+   * (so `deleteMissing` removes stale rows on next refresh), but DB rows
+   * scanned BEFORE the filter shipped still linger until the next refresh.
+   * Applying this at read time keeps the UI honest even without a refresh.
+   */
+  private filterOutSystemSkills(skills: Skill[]): Skill[] {
+    const blacklist = this.deps.systemSkillIds?.();
+    if (!blacklist || blacklist.size === 0) return skills;
+    return skills.filter(
+      (s) => !(s.type === SkillType.Skill && blacklist.has(s.name))
+    );
   }
 
   // ---------- upstream-HEAD TTL cache ----------

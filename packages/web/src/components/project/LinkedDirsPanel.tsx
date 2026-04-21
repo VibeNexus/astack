@@ -43,7 +43,12 @@ export interface LinkedDirsPanelProps {
   onRemove: (toolName: string) => void | Promise<void>;
 }
 
-const KNOWN_TOOLS = ["cursor", "codebuddy", "windsurf"] as const;
+// Ordering reflects product preference surfaced in the Add-link dropdown:
+// codex → gemini → cursor → codebuddy. `windsurf` was dropped (users
+// reported they don't actually use it and it added visual noise).
+// Any persisted windsurf links continue to work — the backend still
+// reconciles them — they just can't be created from the UI anymore.
+const KNOWN_TOOLS = ["codex", "gemini", "cursor", "codebuddy"] as const;
 
 export function LinkedDirsPanel({
   project,
@@ -80,11 +85,10 @@ export function LinkedDirsPanel({
               </div>
               <div className="text-sm text-fg-secondary mt-1 max-w-md">
                 Astack symlinks{" "}
-                <code className="font-mono text-fg-primary">.cursor/</code>,{" "}
-                <code className="font-mono text-fg-primary">.codebuddy/</code>,{" "}
                 <code className="font-mono text-fg-primary">.codex/</code>,{" "}
-                <code className="font-mono text-fg-primary">.gemini/</code>, and{" "}
-                <code className="font-mono text-fg-primary">.windsurf/</code> to
+                <code className="font-mono text-fg-primary">.gemini/</code>,{" "}
+                <code className="font-mono text-fg-primary">.cursor/</code>, and{" "}
+                <code className="font-mono text-fg-primary">.codebuddy/</code> to
                 your project&apos;s{" "}
                 <code className="font-mono text-fg-primary">
                   {project.primary_tool}/

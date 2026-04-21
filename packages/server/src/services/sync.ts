@@ -64,7 +64,7 @@ import {
   mirrorDir
 } from "../fs-util.js";
 import { gitCommitAndPush, gitGetHead, gitPull } from "../git.js";
-import type { LockManager } from "../lock.js";
+import { projectBootstrapLockKey, type LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
 
 import type { ProjectService } from "./project.js";
@@ -288,6 +288,32 @@ export class SyncService {
       skill_ids?: number[];
       force?: boolean;
     } = {}
+  ): Promise<{
+    outcomes: SyncOutcome[];
+    synced: number;
+    up_to_date: number;
+    conflicts: number;
+    errors: number;
+  }> {
+    // v0.5 §A9: serialise with ProjectBootstrapService for the same project.
+    // pullBatch starts with `reconcileFromManifest` (file-wins reconciliation
+    // that can DELETE rows not in the manifest) and bootstrap writes both DB
+    // rows + manifest. Without this lock, an interleaving exists where
+    // bootstrap inserts a subscription, then sync reads the pre-bootstrap
+    // manifest and deletes that subscription. The lock is per-project so
+    // unrelated repos remain parallel.
+    return this.deps.locks.withLock(
+      projectBootstrapLockKey(projectId),
+      () => this.pullBatchUnderLock(projectId, opts)
+    );
+  }
+
+  private async pullBatchUnderLock(
+    projectId: number,
+    opts: {
+      skill_ids?: number[];
+      force?: boolean;
+    }
   ): Promise<{
     outcomes: SyncOutcome[];
     synced: number;

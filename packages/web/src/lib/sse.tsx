@@ -70,7 +70,10 @@ export function SseProvider({ children }: PropsWithChildren): React.JSX.Element 
       "linked_dir.removed",
       "linked_dir.broken",
       "seed.completed",
-      "harness.changed"
+      "harness.changed",
+      // v0.5 bootstrap (see spec §A7)
+      "subscriptions.bootstrap_needs_resolution",
+      "subscriptions.bootstrap_resolved"
     ];
     for (const name of namedEvents) {
       source.addEventListener(name, listener);

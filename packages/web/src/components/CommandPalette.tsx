@@ -92,7 +92,7 @@ export function CommandPalette({
         {
           label: "Linked Dirs tab",
           run: () => navigate(`/projects/${pid}?tab=tools`),
-          keywords: ["link", "symlink", "cursor", "codebuddy", "windsurf"]
+          keywords: ["link", "symlink", "codex", "gemini", "cursor", "codebuddy"]
         },
         {
           label: "Sync History tab",

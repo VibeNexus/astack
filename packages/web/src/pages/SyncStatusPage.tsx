@@ -32,6 +32,7 @@ type Row = {
 
 export function SyncStatusPage(): React.JSX.Element {
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [projectCount, setProjectCount] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedByProject, setLastSyncedByProject] = useState<
     Record<number, string | null>
@@ -42,6 +43,7 @@ export function SyncStatusPage(): React.JSX.Element {
     try {
       setError(null);
       const { projects } = await api.listProjects({ limit: 500 });
+      setProjectCount(projects.length);
       if (projects.length === 0) {
         setRows([]);
         return;
@@ -77,6 +79,7 @@ export function SyncStatusPage(): React.JSX.Element {
             : String(err)
       );
       setRows([]);
+      setProjectCount(null);
     }
   }, []);
 
@@ -137,13 +140,22 @@ export function SyncStatusPage(): React.JSX.Element {
           <Skeleton className="h-10" />
           <Skeleton className="h-10" />
         </div>
-      ) : rows.length === 0 ? (
+      ) : projectCount === 0 ? (
         <EmptyState
           title="No projects yet"
           hint="Register your first project to start syncing skills."
         >
           <Link to="/projects?action=new">
             <Button variant="primary">Register project</Button>
+          </Link>
+        </EmptyState>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="No skills subscribed yet"
+          hint="Open a project and subscribe to skills from a repo to see sync status here."
+        >
+          <Link to="/projects">
+            <Button variant="primary">Go to projects</Button>
           </Link>
         </EmptyState>
       ) : (

@@ -412,6 +412,11 @@ export class SubscriptionService {
       primary_tool: project.primary_tool,
       linked_tools: linked_dirs.map((l) => l.tool_name),
       subscriptions: dedupeSubscriptions(subs),
+      // v0.5 §A3 / R3: preserve user's bootstrap "Don't subscribe" choices.
+      // rewriteManifest is called on every subscribe/unsubscribe; without
+      // this line the very next subscribe after PR1 ships would silently
+      // wipe `ignored_local`.
+      ignored_local: existing?.ignored_local ?? [],
       last_synced: existing?.last_synced ?? null
     };
 

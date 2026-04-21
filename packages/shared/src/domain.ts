@@ -456,3 +456,104 @@ export interface ProjectHarnessState {
   actual_hash: string | null;
   last_error: string | null;
 }
+
+// ---------- Project bootstrap (v0.5) ----------
+
+/**
+ * Bootstrap result entries — three-way classification of local-but-unsubscribed
+ * skills found under `<project>/<primary_tool>/`.
+ *
+ * v0.5 spec §A1 matching algorithm:
+ *   - `matched`     : exactly one registered skill matches by (type, name)
+ *   - `ambiguous`   : two or more registered skills compete for the same
+ *                     (type, name) — user must pick one (or "Don't subscribe")
+ *   - `unmatched`   : no registered skill provides this (type, name)
+ *
+ * `local_path` is POSIX-relative to `<project>/<primary_tool>/`, e.g.
+ * `"skills/abc"` or `"agents/myagent.md"`.
+ */
+export interface BootstrapMatch {
+  type: SkillType;
+  name: string;
+  local_path: string;
+  skill: Skill;
+  repo: SkillRepo;
+}
+
+export interface BootstrapAmbiguous {
+  type: SkillType;
+  name: string;
+  local_path: string;
+  candidates: Array<{ skill: Skill; repo: SkillRepo }>;
+}
+
+export interface BootstrapUnmatched {
+  type: SkillType;
+  name: string;
+  local_path: string;
+}
+
+/** Pure-scan output — produced by ProjectBootstrapService.scan(). */
+export interface ProjectBootstrapResult {
+  project_id: Id;
+  matched: BootstrapMatch[];
+  ambiguous: BootstrapAmbiguous[];
+  unmatched: BootstrapUnmatched[];
+  scanned_at: IsoDateTime;
+}
+
+/** A user's resolution for one ambiguous bootstrap entry (or an explicit ignore). */
+export interface BootstrapResolution {
+  type: SkillType;
+  name: string;
+  /** null = "don't subscribe, add to ignored_local". */
+  repo_id: Id | null;
+}
+
+// See spec §A4 — bootstrap-path shared per-entry shapes.
+
+export interface BootstrapSubscribedEntry {
+  type: SkillType;
+  name: string;
+  subscription_id: Id;
+}
+
+export interface BootstrapIgnoredEntry {
+  type: SkillType;
+  name: string;
+}
+
+export interface BootstrapFailedEntry {
+  type: SkillType;
+  name: string;
+  /** AstackError code, e.g. "SUBSCRIPTION_NAME_COLLISION". */
+  code: string;
+  message: string;
+}
+
+/** scanAndAutoSubscribe response — see spec §A4. */
+export interface ScanAndAutoSubscribeResult {
+  result: ProjectBootstrapResult;
+  subscribed: BootstrapSubscribedEntry[];
+  failed: BootstrapFailedEntry[];
+  /**
+   * Ambiguous entries the user still needs to resolve. Equal to
+   * `result.ambiguous`; carried as a sibling field so the front-end has a
+   * single canonical source for "what's left" without recomputation.
+   */
+  remaining_ambiguous: BootstrapAmbiguous[];
+}
+
+/** applyResolutions / ignore response — see spec §A4. */
+export interface ApplyResolutionsResult {
+  subscribed: BootstrapSubscribedEntry[];
+  ignored: BootstrapIgnoredEntry[];
+  failed: BootstrapFailedEntry[];
+  /**
+   * Ambiguous entries still unresolved AFTER this call. Includes both
+   * (a) entries not covered by this resolutions batch, and (b) entries
+   * that failed to subscribe (e.g. invalid repo_id) and should re-appear
+   * in the drawer.
+   */
+  remaining_ambiguous: BootstrapAmbiguous[];
+}

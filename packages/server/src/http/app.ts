@@ -23,6 +23,7 @@ import { openDatabase, type Db } from "../db/connection.js";
 import { EventBus } from "../events.js";
 import { LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
+import { ProjectBootstrapService } from "../services/project-bootstrap.js";
 import { ProjectService } from "../services/project.js";
 import { RepoService } from "../services/repo.js";
 import { SubscriptionService } from "../services/subscription.js";
@@ -110,15 +111,27 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     }
   });
 
-  // Construct last: subscribes to project.registered events (see service.ts).
-  // Must come after ProjectService (dependency) but before the container is
-  // exposed so routes can call into it.
+  // Construct after ProjectService (dependency) but before the container is
+  // exposed so routes can call into it. Subscribes to project.registered events.
   const systemSkillService = new SystemSkillService({
     events,
     logger: opts.logger,
     projects: projectService
   });
   systemSkillServiceRef = systemSkillService;
+
+  // v0.5: bootstrap last — depends on projects, subscriptions, systemSkills.
+  // PR4 will wire the project.registered subscriber inside this service;
+  // PR3 just exposes the routes.
+  const projectBootstrapService = new ProjectBootstrapService({
+    db,
+    events,
+    logger: opts.logger,
+    locks,
+    projects: projectService,
+    subscriptions: subscriptionService,
+    systemSkills: systemSkillService
+  });
 
   const container: ServiceContainer = {
     config: opts.config,
@@ -131,7 +144,8 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     subscriptionService,
     symlinkService,
     syncService,
-    systemSkillService
+    systemSkillService,
+    projectBootstrapService
   };
 
   const app = new Hono();

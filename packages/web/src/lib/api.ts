@@ -12,7 +12,9 @@
 import {
   AstackError,
   ErrorCode,
+  type ApplyResolutionsResult,
   type AstackErrorBody,
+  type BootstrapResolution,
   type CreateLinkedDirRequest,
   type CreateLinkedDirResponse,
   type DeleteProjectResponse,
@@ -25,6 +27,7 @@ import {
   type ListSyncLogsQuery,
   type ListSyncLogsResponse,
   type FsListResponse,
+  type ProjectBootstrapResult,
   type ProjectHarnessState,
   type PushResponse,
   type RefreshRepoResponse,
@@ -34,6 +37,8 @@ import {
   type RegisterRepoResponse,
   type ResolveRequest,
   type ResolveResponse,
+  type ScanAndAutoSubscribeResult,
+  type SkillType,
   type SubscribeRequest,
   type SubscribeResponse,
   type SyncResponse,
@@ -202,7 +207,25 @@ export const api = {
   inspectHarness: (projectId: number): Promise<ProjectHarnessState> =>
     request("GET", `/api/projects/${projectId}/harness`),
   installHarness: (projectId: number): Promise<ProjectHarnessState> =>
-    request("POST", `/api/projects/${projectId}/harness/install`)
+    request("POST", `/api/projects/${projectId}/harness/install`),
+
+  // Bootstrap (v0.5 — auto-subscribe legacy .claude/ contents)
+  inspectBootstrap: (projectId: number): Promise<ProjectBootstrapResult> =>
+    request("GET", `/api/projects/${projectId}/bootstrap`),
+  scanBootstrap: (projectId: number): Promise<ScanAndAutoSubscribeResult> =>
+    request("POST", `/api/projects/${projectId}/bootstrap/scan`, {}),
+  resolveBootstrap: (
+    projectId: number,
+    resolutions: BootstrapResolution[]
+  ): Promise<ApplyResolutionsResult> =>
+    request("POST", `/api/projects/${projectId}/bootstrap/resolve`, {
+      resolutions
+    }),
+  ignoreBootstrap: (
+    projectId: number,
+    entries: Array<{ type: SkillType; name: string }>
+  ): Promise<ApplyResolutionsResult> =>
+    request("POST", `/api/projects/${projectId}/bootstrap/ignore`, { entries })
 };
 
 export { AstackError, ErrorCode };

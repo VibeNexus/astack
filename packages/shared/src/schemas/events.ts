@@ -72,7 +72,30 @@ export const EventType = {
    * The payload carries the new status so clients can update state without
    * re-fetching. See v0.4 spec §A5.
    */
-  HarnessChanged: "harness.changed"
+  HarnessChanged: "harness.changed",
+
+  /**
+   * Subscription bootstrap finished and at least one ambiguous local skill
+   * needs the user to pick a repo (v0.5).
+   *
+   * Emitted by `ProjectBootstrapService.scanAndAutoSubscribe` when
+   * `ambiguous.length > 0` AFTER auto-subscribing the unambiguous matches.
+   * The Web SubscriptionsPanel reacts by refetching `/bootstrap` and
+   * showing the resolve banner.
+   */
+  SubscriptionsBootstrapNeedsResolution:
+    "subscriptions.bootstrap_needs_resolution",
+
+  /**
+   * Subscription bootstrap had a write side-effect that does NOT need user
+   * resolution (v0.5):
+   *   - auto-subscribe succeeded for ≥ 1 entry with no ambiguous remaining
+   *   - applyResolutions / ignore completed
+   *
+   * Web clients use this to invalidate both `['status', projectId]` and
+   * `['bootstrap', projectId]` query keys. See v0.5 spec §A7.
+   */
+  SubscriptionsBootstrapResolved: "subscriptions.bootstrap_resolved"
 } as const;
 export type EventType = (typeof EventType)[keyof typeof EventType];
 
@@ -183,6 +206,38 @@ export const HarnessChangedPayloadSchema = z.object({
   last_error: z.string().nullable().optional()
 });
 
+/**
+ * SubscriptionsBootstrapNeedsResolution: bootstrap auto-subscribed what it
+ * could and ≥ 1 ambiguous local skill needs the user to pick a repo (v0.5).
+ *
+ * `ambiguous_count` is positive by construction — emitter only fires when
+ * ambiguous.length > 0. `auto_subscribed_count` is the number of matched
+ * skills that were auto-subscribed BEFORE this event fires.
+ */
+export const SubscriptionsBootstrapNeedsResolutionPayloadSchema = z.object({
+  project_id: z.number().int().positive(),
+  matched_count: z.number().int().nonnegative(),
+  ambiguous_count: z.number().int().positive(),
+  unmatched_count: z.number().int().nonnegative(),
+  auto_subscribed_count: z.number().int().nonnegative()
+});
+
+/**
+ * SubscriptionsBootstrapResolved: bootstrap had a write side-effect that
+ * does NOT need further user input (v0.5).
+ *
+ * Sent in three scenarios (see spec §A7):
+ *   1. scanAndAutoSubscribe with subscribed > 0 AND ambiguous === 0
+ *   2. applyResolutions completed (any combination of subscribe / ignore)
+ *   3. ignore completed
+ */
+export const SubscriptionsBootstrapResolvedPayloadSchema = z.object({
+  project_id: z.number().int().positive(),
+  remaining_ambiguous_count: z.number().int().nonnegative(),
+  subscribed_count: z.number().int().nonnegative(),
+  ignored_count: z.number().int().nonnegative()
+});
+
 // ---------- Discriminated union ----------
 
 /**
@@ -249,6 +304,14 @@ export const AstackEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(EventType.HarnessChanged),
     payload: HarnessChangedPayloadSchema
+  }),
+  z.object({
+    type: z.literal(EventType.SubscriptionsBootstrapNeedsResolution),
+    payload: SubscriptionsBootstrapNeedsResolutionPayloadSchema
+  }),
+  z.object({
+    type: z.literal(EventType.SubscriptionsBootstrapResolved),
+    payload: SubscriptionsBootstrapResolvedPayloadSchema
   })
 ]);
 export type AstackEvent = z.infer<typeof AstackEventSchema>;

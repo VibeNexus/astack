@@ -10,6 +10,7 @@ import type { Db } from "../db/connection.js";
 import type { EventBus } from "../events.js";
 import type { LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
+import type { ProjectBootstrapService } from "../services/project-bootstrap.js";
 import type { ProjectService } from "../services/project.js";
 import type { RepoService } from "../services/repo.js";
 import type { SubscriptionService } from "../services/subscription.js";
@@ -29,4 +30,6 @@ export interface ServiceContainer {
   symlinkService: SymlinkService;
   syncService: SyncService;
   systemSkillService: SystemSkillService;
+  /** v0.5 — see spec §3 / PR3. */
+  projectBootstrapService: ProjectBootstrapService;
 }

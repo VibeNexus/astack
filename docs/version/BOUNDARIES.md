@@ -3,6 +3,39 @@
 > 每个迭代的范围边界，防止跨迭代的范围蔓延。由 `/spec` 命令自动维护。
 > spec_review 评审时作为迭代边界遵守（A3）的评审基准。
 
+## v0.5 — Subscription Bootstrap for Legacy Projects
+
+**本迭代做：**
+- `ProjectBootstrapService`：注册 legacy 项目时自动扫 `<project>/<primary_tool>/`，跟已注册 repo 的 skill 按 `(type, name)` pair 匹配
+- 三元分类：`matched`（单 repo 唯一命中，自动订阅）/ `ambiguous`（多 repo 同名，UI 让用户选）/ `unmatched`（无 repo 提供，保持 pure local）
+- `BOOTSTRAP_SCAN_CONFIG`：在 `DEFAULT_SCAN_CONFIG`（skills + commands）基础上叠加 `agents/` root，bootstrap 场景专用，**不改全局 DEFAULT_SCAN_CONFIG**
+- `.astack.json` 扩展 `ignored_local: Array<{type, name, ignored_at?}>` 字段（带 default `[]`，向后兼容）；PR1 原子改动必须同时扩展 `rewriteManifest` 保留该字段
+- 4 个 HTTP 端点：`GET /bootstrap`（纯读）/ `POST /bootstrap/scan`（扫+自动订阅 matched）/ `POST /bootstrap/resolve`（用户选择应用）/ `POST /bootstrap/ignore`（显式忽略）
+- 统一 response shape：`ApplyResolutionsResult = {subscribed, ignored, failed, remaining_ambiguous}`；partial success 用 HTTP 200 + `failed[]` 结构化错误
+- Subscriptions tab 新增 `BootstrapBanner` + `ResolveBootstrapDrawer`；`ProjectDetailPage` 独立 `useQuery(['bootstrap', projectId])`
+- 2 个新 SSE 事件：`subscriptions.bootstrap_needs_resolution`、`subscriptions.bootstrap_resolved`（**不复用也不新增 `subscription.added`**，前端靠 bootstrap_* 事件 invalidate `['status']` + `['bootstrap']` 两个 query key）
+- 订阅 `project.registered` 事件做 fire-and-forget 自动扫描 + auto-subscribe matched（失败不阻塞注册）
+- A8 per-project 进程内 promise 锁（Map<projectId, Promise>）避免并发 scan 交错
+- A9 LockManager 跨服务锁：`project-bootstrap-${projectId}` 由 bootstrap 的所有写入路径 + `SyncService.syncProject` 共同 acquire，防止 `reconcileFromManifest` 与 bootstrap 写入交错（PR2 搭便车修 1 行 `sync.ts`）
+- `autoSubscribeMatched` / `applyResolutions` 强制 per-item try/catch（对齐 `subscribeBatch:287-313`），AstackError 归入 `failed[]`，非 AstackError 向上冒泡
+- 复用 v0.4 A9 的 `systemSkillIds` 过滤：`harness-init` 等系统 skill 永远不进 bootstrap 任何分类
+- E2E 覆盖：pure empty / all matched happy path / ambiguous → resolved / unmatched → ignored
+
+**本迭代不做（延后到 v0.6+）：**
+- 自动 sync bootstrap 后的订阅（覆盖本地 drift）—— 违背"不覆盖用户内容"原则
+- 按内容 hash 匹配 / smart 匹配提示"内容 95% 相似"—— 命中率低 / 实现复杂
+- Bootstrap 时自动建 `linked_dirs`（`.cursor` → `.claude` 等）—— 正交问题，LinkedDirsPanel 已有独立入口
+- "重新匹配"已订阅的 skill（换 repo）—— 走现有 unsubscribe + subscribe 流程
+- CLI `astack bootstrap scan/resolve/ignore` —— v0.6 跟其他 CLI 一致性补齐
+- Team 协作 UI（多人对同一 ambiguous 的解决结果实时同步）—— 靠 git 提交 `.astack.json` 隐式同步
+- Daemon 启动时 re-scan 所有项目的 bootstrap —— 注册 + 手动 Re-scan 两个触发点已足够
+- 扩展 `SubscriptionState` 枚举新增 `imported` 等状态 —— 沿用现有状态
+- 非 `.claude` primary_tool 的 bootstrap —— bootstrap handler 跳过，同 v0.4 A4
+- 全局扩展 `DEFAULT_SCAN_CONFIG` 为三 root（让 repo scan 也覆盖 agents）—— 本迭代只做 bootstrap 场景专用 `BOOTSTRAP_SCAN_CONFIG`，避免扩大 blast radius
+- Sidebar 项目列表上 pending ambiguous 的 badge —— UX 加分项，v0.6
+- Settings tab 的 "Ignored local skills" 管理 UI（un-ignore）—— v0.6 补
+- "Bootstrap baseline" 内容 hash 快照（诊断用）—— 价值有但非必须
+
 ## v0.4 — Harness Tab + 系统级 Skill 首次落地
 
 **本迭代做：**
