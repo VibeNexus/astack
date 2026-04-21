@@ -1,9 +1,14 @@
 import type * as React from "react";
 
-import type { ToolLink, ToolLinkBrokenReason } from "@astack/shared";
+import type {
+  PrimaryToolStatus,
+  Project,
+  ToolLink,
+  ToolLinkBrokenReason
+} from "@astack/shared";
 import { useRef, useState } from "react";
 
-import { Button, Card, IconButton, StatusDot } from "../ui/index.js";
+import { Button, Card, IconButton, StatusDot, type StatusTone } from "../ui/index.js";
 import { relativeTime } from "../../lib/format.js";
 
 /**
@@ -20,12 +25,19 @@ import { relativeTime } from "../../lib/format.js";
  *   - broken_reason when broken (target_missing / not_a_symlink / perm)
  *   - Unlink button (primary for broken, ghost for active)
  *
+ * v0.4 patch: the project's primary tool dir itself (e.g. `.claude`) is
+ * rendered as a special "Primary" row at the top. It's the target of
+ * every symlink but isn't one itself; users can see its initialization
+ * state (initialized/empty/missing) alongside the linked tools. No
+ * Unlink button — you can't unlink the source of truth.
+ *
  * Add flow is a dropdown instead of three buttons — avoids the AI-slop
  * 3-button grid and leaves room for a future "Custom path…" option
  * (tracked as post-v0.3 work).
  */
 
 export interface LinkedToolsPanelProps {
+  project: Project;
   links: ToolLink[];
   onAdd: (toolName: string) => void | Promise<void>;
   onRemove: (toolName: string) => void | Promise<void>;
@@ -34,12 +46,17 @@ export interface LinkedToolsPanelProps {
 const KNOWN_TOOLS = ["cursor", "codebuddy", "windsurf"] as const;
 
 export function LinkedToolsPanel({
+  project,
   links,
   onAdd,
   onRemove
 }: LinkedToolsPanelProps): React.JSX.Element {
   const linkedNames = new Set(links.map((l) => l.tool_name));
   const canAdd = KNOWN_TOOLS.filter((t) => !linkedNames.has(t));
+  // Primary row is always visible — it's conceptually the "0th entry"
+  // (the target everything else points at). It counts toward the
+  // header total so users see "Linked Tools 2" instead of 1+phantom.
+  const totalCount = links.length + 1;
 
   return (
     <section className="space-y-3 pt-5">
@@ -47,39 +64,134 @@ export function LinkedToolsPanel({
         <h2 className="text-sm font-medium text-fg-secondary">
           Linked Tools
           <span className="ml-2 text-xs text-fg-tertiary tabular">
-            {links.length}
+            {totalCount}
           </span>
         </h2>
         <AddLinkMenu options={canAdd} onSelect={onAdd} />
       </div>
 
-      {links.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 py-10 px-6 border border-dashed border-line-subtle rounded-lg">
-          <div>
-            <div className="text-base font-semibold text-fg-primary">
-              Link a tool to share your skills
-            </div>
-            <div className="text-sm text-fg-secondary mt-1 max-w-md">
-              Astack symlinks{" "}
-              <code className="font-mono text-fg-primary">.cursor/</code>,{" "}
-              <code className="font-mono text-fg-primary">.codebuddy/</code>,
-              and{" "}
-              <code className="font-mono text-fg-primary">.windsurf/</code> to
-              your project's{" "}
-              <code className="font-mono text-fg-primary">.claude/</code> dir
-              so every AI tool sees the same skills.
+      <div className="space-y-2">
+        <PrimaryToolRow project={project} />
+        {links.length === 0 ? (
+          <div className="flex flex-col items-start gap-3 py-8 px-6 border border-dashed border-line-subtle rounded-lg">
+            <div>
+              <div className="text-base font-semibold text-fg-primary">
+                Link a tool to share your skills
+              </div>
+              <div className="text-sm text-fg-secondary mt-1 max-w-md">
+                Astack symlinks{" "}
+                <code className="font-mono text-fg-primary">.cursor/</code>,{" "}
+                <code className="font-mono text-fg-primary">.codebuddy/</code>,
+                and{" "}
+                <code className="font-mono text-fg-primary">.windsurf/</code> to
+                your project&apos;s{" "}
+                <code className="font-mono text-fg-primary">
+                  {project.primary_tool}/
+                </code>{" "}
+                dir so every AI tool sees the same skills.
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {links.map((l) => (
+        ) : (
+          links.map((l) => (
             <ToolLinkCard key={l.id} link={l} onRemove={onRemove} />
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </section>
   );
+}
+
+// ---------- PrimaryToolRow ----------
+
+/**
+ * The canonical tool dir (default `.claude`) rendered as a list item.
+ *
+ * Visually matches ToolLinkCard so the list reads as homogeneous, but:
+ *   - a "Primary" tag replaces the status label
+ *   - no Unlink button (can't unlink the source of truth)
+ *   - `target_path` is itself — no arrow / resolution line
+ *   - status dot comes from primary_tool_status (initialized/empty/missing)
+ *
+ * Rationale: users who see only `.cursor` in the list were confused
+ * about where the actual skills live. Surfacing the primary dir in
+ * the same list makes the "everything points here" model literal.
+ */
+function PrimaryToolRow({
+  project
+}: {
+  project: Project;
+}): React.JSX.Element {
+  const meta = describePrimary(project.primary_tool_status);
+  const displayName = project.primary_tool.replace(/^\./, "");
+  const absPath = `${project.path.replace(/\/$/, "")}/${project.primary_tool}`;
+
+  return (
+    <Card className="px-4 py-3 border-accent/20 bg-accent/[0.03]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-sm">
+            <StatusDot tone={meta.tone} />
+            <span className="font-semibold text-fg-primary">
+              {displayName}
+            </span>
+            <span className="text-xs text-fg-tertiary font-mono">
+              {project.primary_tool}
+            </span>
+            <span className="text-[10px] uppercase tracking-wide font-medium text-accent bg-accent/10 border border-accent/30 rounded px-1.5 py-0.5 ml-1">
+              Primary
+            </span>
+            <span className="text-xs text-fg-tertiary ml-1">{meta.label}</span>
+          </div>
+          <div className="mt-1 text-xs text-fg-tertiary">
+            <code className="font-mono text-fg-secondary">{absPath}</code>
+          </div>
+          {meta.hint && (
+            <div className="mt-1 text-xs text-fg-tertiary italic">
+              {meta.hint}
+            </div>
+          )}
+        </div>
+        <div className="text-xs text-fg-quaternary pt-0.5 select-none">
+          source of truth
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+interface PrimaryMeta {
+  tone: StatusTone;
+  label: string;
+  hint: string | null;
+}
+
+function describePrimary(status: PrimaryToolStatus | null): PrimaryMeta {
+  // `null` only from legacy code paths that predate primary_tool_status.
+  // Show neutral muted dot rather than guessing.
+  if (status === null) {
+    return { tone: "muted", label: "unknown", hint: null };
+  }
+  switch (status) {
+    case "initialized":
+      return { tone: "accent", label: "initialized", hint: null };
+    case "empty":
+      return {
+        tone: "warn",
+        label: "empty",
+        hint: "Directory exists but no skills or commands yet."
+      };
+    case "missing":
+      return {
+        tone: "hollow",
+        label: "missing",
+        hint: "Directory does not exist on disk."
+      };
+    default: {
+      const _exhaustive: never = status;
+      return { tone: "muted", label: String(_exhaustive), hint: null };
+    }
+  }
 }
 
 // ---------- ToolLinkCard ----------

@@ -312,6 +312,7 @@ export function ProjectDetailPage(): React.JSX.Element {
 
       <TabPanel tabId="tools" activeId={activeTab} idPrefix="project-detail">
         <LinkedToolsPanel
+          project={status.project}
           links={status.tool_links}
           onAdd={async (tool) => {
             await actions.addLink(tool);
