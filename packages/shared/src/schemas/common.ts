@@ -14,8 +14,8 @@ import {
   SubscriptionState,
   SyncDirection,
   SyncStatus,
-  ToolLinkBrokenReason,
-  ToolLinkStatus
+  LinkedDirBrokenReason,
+  LinkedDirStatus
 } from "../domain.js";
 
 // ---------- Primitives ----------
@@ -68,15 +68,15 @@ export const SyncStatusSchema = z.enum([
   SyncStatus.Conflict,
   SyncStatus.Error
 ]);
-export const ToolLinkStatusSchema = z.enum([
-  ToolLinkStatus.Active,
-  ToolLinkStatus.Broken,
-  ToolLinkStatus.Removed
+export const LinkedDirStatusSchema = z.enum([
+  LinkedDirStatus.Active,
+  LinkedDirStatus.Broken,
+  LinkedDirStatus.Removed
 ]);
-export const ToolLinkBrokenReasonSchema = z.enum([
-  ToolLinkBrokenReason.TargetMissing,
-  ToolLinkBrokenReason.NotASymlink,
-  ToolLinkBrokenReason.PermissionDenied
+export const LinkedDirBrokenReasonSchema = z.enum([
+  LinkedDirBrokenReason.TargetMissing,
+  LinkedDirBrokenReason.NotASymlink,
+  LinkedDirBrokenReason.PermissionDenied
 ]);
 export const PrimaryToolStatusSchema = z.enum([
   PrimaryToolStatus.Initialized,
@@ -185,14 +185,14 @@ export const SyncLogSchema = z.object({
   synced_at: IsoDateTimeSchema
 });
 
-export const ToolLinkSchema = z.object({
+export const LinkedDirSchema = z.object({
   id: IdSchema,
   project_id: IdSchema,
   tool_name: NonEmptyStringSchema,
   dir_name: NonEmptyStringSchema,
-  status: ToolLinkStatusSchema,
+  status: LinkedDirStatusSchema,
   target_path: z.string().nullable(),
-  broken_reason: ToolLinkBrokenReasonSchema.nullable(),
+  broken_reason: LinkedDirBrokenReasonSchema.nullable(),
   created_at: IsoDateTimeSchema
 });
 
@@ -207,6 +207,6 @@ export const SubscriptionWithStateSchema = z.object({
 export const ProjectStatusSchema = z.object({
   project: ProjectSchema,
   subscriptions: z.array(SubscriptionWithStateSchema),
-  tool_links: z.array(ToolLinkSchema),
+  linked_dirs: z.array(LinkedDirSchema),
   last_synced: IsoDateTimeSchema.nullable()
 });

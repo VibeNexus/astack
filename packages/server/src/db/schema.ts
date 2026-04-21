@@ -20,7 +20,7 @@
  *   subscriptions    [SOURCE]  — mirror of .astack.json (file-authoritative;
  *                                SQLite kept in sync on every CLI operation)
  *   sync_logs        [SOURCE]  — only lives in SQLite
- *   tool_links       [SOURCE]  — filesystem is source but we cache "last known"
+ *   linked_dirs       [SOURCE]  — filesystem is source but we cache "last known"
  *   seed_decisions   [SOURCE]  — user decisions about builtin seed repos
  *                                (added in v0.2 — respected by SeedService)
  */
@@ -119,9 +119,9 @@ CREATE INDEX IF NOT EXISTS idx_sync_logs_project ON sync_logs(project_id, synced
 CREATE INDEX IF NOT EXISTS idx_sync_logs_skill   ON sync_logs(skill_id, synced_at DESC);
 
 -- ============================================================
--- [SOURCE] tool_links — symlinks from derived tool dirs to .claude
+-- [SOURCE] linked_dirs — symlinks from derived tool dirs to .claude
 -- ============================================================
-CREATE TABLE IF NOT EXISTS tool_links (
+CREATE TABLE IF NOT EXISTS linked_dirs (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   tool_name  TEXT NOT NULL,

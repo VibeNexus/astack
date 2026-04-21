@@ -201,10 +201,10 @@ describe("CLI ↔ daemon integration", () => {
     void reg;
   });
 
-  it("tool links: add cursor, list, and remove", async () => {
+  it("linked dirs: add cursor, list, and remove", async () => {
     const proj = await client.registerProject({ path: projectDir.path });
 
-    const added = await client.createToolLink(proj.project.id, {
+    const added = await client.createLinkedDir(proj.project.id, {
       tool_name: "cursor"
     });
     expect(added.link.tool_name).toBe("cursor");
@@ -215,9 +215,9 @@ describe("CLI ↔ daemon integration", () => {
     ).toBe(true);
 
     const status = await client.projectStatus(proj.project.id);
-    expect(status.tool_links).toHaveLength(1);
+    expect(status.linked_dirs).toHaveLength(1);
 
-    const removed = await client.deleteToolLink(proj.project.id, "cursor");
+    const removed = await client.deleteLinkedDir(proj.project.id, "cursor");
     expect(removed.deleted).toBe(true);
   });
 });

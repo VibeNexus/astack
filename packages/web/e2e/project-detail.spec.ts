@@ -93,11 +93,11 @@ test.describe("project detail — v0.3 tabs + browse flow", () => {
       page.getByRole("tab", { name: /Subscriptions/ })
     ).toHaveAttribute("aria-selected", "true");
 
-    // Click Linked Tools → URL updates + aria flips.
-    await page.getByRole("tab", { name: /Linked Tools/ }).click();
+    // Click Linked Dirs → URL updates + aria flips.
+    await page.getByRole("tab", { name: /Linked Dirs/ }).click();
     await expect(page).toHaveURL(/\?tab=tools$/);
     await expect(
-      page.getByRole("tab", { name: /Linked Tools/ })
+      page.getByRole("tab", { name: /Linked Dirs/ })
     ).toHaveAttribute("aria-selected", "true");
 
     // Deep link — Sync History.
@@ -199,7 +199,7 @@ test.describe("project detail — keyboard tab nav", () => {
     if (projectDir) rmSync(projectDir, { recursive: true, force: true });
   });
 
-  test("ArrowRight from Subscriptions moves to Linked Tools with focus+selection", async ({
+  test("ArrowRight from Subscriptions moves to Linked Dirs with focus+selection", async ({
     page,
     request
   }) => {
@@ -210,7 +210,7 @@ test.describe("project detail — keyboard tab nav", () => {
     await subsTab.focus();
     await page.keyboard.press("ArrowRight");
 
-    const toolsTab = page.getByRole("tab", { name: /Linked Tools/ });
+    const toolsTab = page.getByRole("tab", { name: /Linked Dirs/ });
     await expect(toolsTab).toHaveAttribute("aria-selected", "true");
     // URL has updated.
     await expect(page).toHaveURL(/\?tab=tools$/);

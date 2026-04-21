@@ -90,7 +90,7 @@ export function CommandPalette({
           keywords: ["subscribe", "skill"]
         },
         {
-          label: "Linked Tools tab",
+          label: "Linked Dirs tab",
           run: () => navigate(`/projects/${pid}?tab=tools`),
           keywords: ["link", "symlink", "cursor", "codebuddy", "windsurf"]
         },

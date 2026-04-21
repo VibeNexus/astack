@@ -1,6 +1,6 @@
 import type * as React from "react";
 
-import type { GetProjectStatusResponse, ToolLink } from "@astack/shared";
+import type { GetProjectStatusResponse, LinkedDir } from "@astack/shared";
 import { Link } from "react-router-dom";
 
 import { Button } from "../ui/index.js";
@@ -17,8 +17,8 @@ import { relativeTime } from "../../lib/format.js";
 
 export interface ProjectHeaderProps {
   status: GetProjectStatusResponse;
-  /** Number of tool_links across all statuses (enriched ToolLink array). */
-  toolLinks: ToolLink[];
+  /** Number of linked_dirs across all statuses (enriched LinkedDir array). */
+  linkedDirs: LinkedDir[];
   onSync: () => void | Promise<void>;
   onPush: () => void | Promise<void>;
   /** Disables action buttons while a mutation is in flight. */
@@ -27,7 +27,7 @@ export interface ProjectHeaderProps {
 
 export function ProjectHeader({
   status,
-  toolLinks,
+  linkedDirs,
   onSync,
   onPush,
   busy
@@ -36,7 +36,7 @@ export function ProjectHeader({
   const attentionCount = subscriptions.filter(
     (s) => s.state !== "synced"
   ).length;
-  const brokenTools = toolLinks.filter((t) => t.status === "broken").length;
+  const brokenTools = linkedDirs.filter((t) => t.status === "broken").length;
 
   return (
     <header>
@@ -57,7 +57,7 @@ export function ProjectHeader({
           <SummaryLine
             subscriptions={subscriptions.length}
             attention={attentionCount}
-            tools={toolLinks.length}
+            tools={linkedDirs.length}
             brokenTools={brokenTools}
             lastSynced={last_synced}
           />

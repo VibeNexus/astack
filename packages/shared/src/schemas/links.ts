@@ -12,11 +12,11 @@
 
 import { z } from "zod";
 
-import { IdSchema, NonEmptyStringSchema, ToolLinkSchema } from "./common.js";
+import { IdSchema, NonEmptyStringSchema, LinkedDirSchema } from "./common.js";
 
 // ---------- POST /api/projects/:id/links ----------
 
-export const CreateToolLinkRequestSchema = z.object({
+export const CreateLinkedDirRequestSchema = z.object({
   /** Short tool name, e.g. "cursor", "codebuddy". */
   tool_name: NonEmptyStringSchema,
   /**
@@ -25,23 +25,23 @@ export const CreateToolLinkRequestSchema = z.object({
    */
   dir_name: NonEmptyStringSchema.optional()
 });
-export type CreateToolLinkRequest = z.infer<typeof CreateToolLinkRequestSchema>;
+export type CreateLinkedDirRequest = z.infer<typeof CreateLinkedDirRequestSchema>;
 
-export const CreateToolLinkResponseSchema = z.object({
-  link: ToolLinkSchema
+export const CreateLinkedDirResponseSchema = z.object({
+  link: LinkedDirSchema
 });
-export type CreateToolLinkResponse = z.infer<typeof CreateToolLinkResponseSchema>;
+export type CreateLinkedDirResponse = z.infer<typeof CreateLinkedDirResponseSchema>;
 
 // ---------- DELETE /api/projects/:id/links/:tool ----------
 
-export const DeleteToolLinkParamsSchema = z.object({
+export const DeleteLinkedDirParamsSchema = z.object({
   id: z.coerce.number().pipe(IdSchema),
   tool: NonEmptyStringSchema
 });
-export type DeleteToolLinkParams = z.infer<typeof DeleteToolLinkParamsSchema>;
+export type DeleteLinkedDirParams = z.infer<typeof DeleteLinkedDirParamsSchema>;
 
-export const DeleteToolLinkResponseSchema = z.object({
+export const DeleteLinkedDirResponseSchema = z.object({
   deleted: z.literal(true),
   tool_name: NonEmptyStringSchema
 });
-export type DeleteToolLinkResponse = z.infer<typeof DeleteToolLinkResponseSchema>;
+export type DeleteLinkedDirResponse = z.infer<typeof DeleteLinkedDirResponseSchema>;

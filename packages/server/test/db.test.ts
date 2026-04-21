@@ -38,7 +38,7 @@ describe("openDatabase", () => {
         "skills",
         "subscriptions",
         "sync_logs",
-        "tool_links"
+        "linked_dirs"
       ])
     );
     db.close();

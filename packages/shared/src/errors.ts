@@ -81,9 +81,9 @@ export const ErrorCode = {
   /** Manual merge completed but file still contains `<<<<<<<` markers. */
   MERGE_INCOMPLETE: "MERGE_INCOMPLETE",
 
-  // ---- tool links / symlinks ----
-  TOOL_LINK_NOT_FOUND: "TOOL_LINK_NOT_FOUND",
-  TOOL_LINK_ALREADY_EXISTS: "TOOL_LINK_ALREADY_EXISTS",
+  // ---- linked dirs / symlinks ----
+  LINKED_DIR_NOT_FOUND: "LINKED_DIR_NOT_FOUND",
+  LINKED_DIR_ALREADY_EXISTS: "LINKED_DIR_ALREADY_EXISTS",
   /**
    * OS refused the symlink call (Windows non-dev-mode, or cross-device).
    * See design.md § Eng Review decision 3.
@@ -172,8 +172,8 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
   NO_ACTIVE_CONFLICT: 409,
   MERGE_INCOMPLETE: 422,
 
-  TOOL_LINK_NOT_FOUND: 404,
-  TOOL_LINK_ALREADY_EXISTS: 409,
+  LINKED_DIR_NOT_FOUND: 404,
+  LINKED_DIR_ALREADY_EXISTS: 409,
   SYMLINK_UNSUPPORTED: 501,
   SYMLINK_TARGET_OCCUPIED: 409,
 

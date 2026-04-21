@@ -22,8 +22,8 @@ vi.mock("../../src/lib/api.js", async () => {
       sync: vi.fn(),
       push: vi.fn(),
       unsubscribe: vi.fn(),
-      createToolLink: vi.fn(),
-      deleteToolLink: vi.fn()
+      createLinkedDir: vi.fn(),
+      deleteLinkedDir: vi.fn()
     }
   };
 });
@@ -216,7 +216,7 @@ describe("useProjectActions", () => {
   // ---- addLink / removeLink ----
 
   it("addLink: passes tool_name correctly", async () => {
-    const createMock = vi.mocked(api.createToolLink);
+    const createMock = vi.mocked(api.createLinkedDir);
     createMock.mockResolvedValue({
       link: {
         id: 1,
@@ -240,7 +240,7 @@ describe("useProjectActions", () => {
   });
 
   it("removeLink: passes tool_name correctly", async () => {
-    const delMock = vi.mocked(api.deleteToolLink);
+    const delMock = vi.mocked(api.deleteLinkedDir);
     delMock.mockResolvedValue({ deleted: true });
     const { result } = renderHook(
       () => useProjectActions(PROJECT_ID, reload),

@@ -6,7 +6,7 @@
 import {
   SubscriptionState,
   type SubscriptionState as SubStateT,
-  type ToolLinkStatus
+  type LinkedDirStatus
 } from "@astack/shared";
 
 type Tone = "accent" | "warn" | "error" | "muted";
@@ -43,7 +43,7 @@ export function subscriptionStatusInfo(state: SubStateT): {
 }
 
 const LINK_LABELS: Record<
-  ToolLinkStatus,
+  LinkedDirStatus,
   { label: string; tone: Tone }
 > = {
   active: { label: "Active", tone: "accent" },
@@ -51,7 +51,7 @@ const LINK_LABELS: Record<
   removed: { label: "Removed", tone: "muted" }
 };
 
-export function toolLinkStatusInfo(status: ToolLinkStatus): {
+export function linkedDirStatusInfo(status: LinkedDirStatus): {
   label: string;
   tone: Tone;
 } {

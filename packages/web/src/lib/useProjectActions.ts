@@ -9,7 +9,7 @@
  *
  * Before v0.3 each handler copy-pasted this try/catch/toast/reload block,
  * five times. This hook consolidates it and keeps ProjectDetailPage lean
- * as we add new actions (batch subscribe, pin version, custom tool link).
+ * as we add new actions (batch subscribe, pin version, custom linked dir).
  *
  * Behavior contract (matching pre-v0.3 handlers byte-for-byte):
  *   - AstackError → toast.error(errMsg, err.message)
@@ -116,14 +116,14 @@ export function useProjectActions(
       },
       addLink: async (tool: string) => {
         const res = await runAction(
-          () => api.createToolLink(projectId, { tool_name: tool }),
+          () => api.createLinkedDir(projectId, { tool_name: tool }),
           { okMsg: `Linked ${tool}`, errMsg: "Link failed" }
         );
         return res !== undefined;
       },
       removeLink: async (tool: string) => {
         const res = await runAction(
-          () => api.deleteToolLink(projectId, tool),
+          () => api.deleteLinkedDir(projectId, tool),
           { okMsg: `Removed ${tool}`, errMsg: "Remove failed" }
         );
         return res !== undefined;

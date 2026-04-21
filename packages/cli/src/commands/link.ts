@@ -17,7 +17,7 @@ export async function runLinkAdd(
   const client = new AstackClient({ baseUrl: ctx.serverUrl });
   await ensureDaemonOnline(client);
 
-  const result = await client.createToolLink(ctx.projectId, {
+  const result = await client.createLinkedDir(ctx.projectId, {
     tool_name: toolName,
     dir_name: dirName
   });
@@ -31,7 +31,7 @@ export async function runLinkRemove(toolName: string): Promise<void> {
   const client = new AstackClient({ baseUrl: ctx.serverUrl });
   await ensureDaemonOnline(client);
 
-  await client.deleteToolLink(ctx.projectId, toolName);
+  await client.deleteLinkedDir(ctx.projectId, toolName);
   printOk(`removed link: ${toolName}`);
 }
 
@@ -41,14 +41,14 @@ export async function runLinkList(): Promise<void> {
   await ensureDaemonOnline(client);
 
   const status = await client.projectStatus(ctx.projectId);
-  if (status.tool_links.length === 0) {
-    printWarn("no tool links configured");
+  if (status.linked_dirs.length === 0) {
+    printWarn("no linked dirs configured");
     printNext("add one with: astack link add <tool_name>");
     return;
   }
 
   const rows: string[][] = [[kleur.bold("tool"), kleur.bold("dir"), kleur.bold("status")]];
-  for (const link of status.tool_links) {
+  for (const link of status.linked_dirs) {
     rows.push([link.tool_name, link.dir_name, colorStatus(link.status)]);
   }
   printTable(rows);

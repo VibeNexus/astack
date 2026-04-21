@@ -58,14 +58,14 @@ export function projectsRoutes(c: ServiceContainer): Hono {
   app.get("/:id/status", zValidator("param", ProjectParamsSchema), (ctx) => {
     const { id } = ctx.req.valid("param");
     // Reconcile symlink health first so broken-link rows surface accurately;
-    // reconcile also returns the enriched tool_links (target_path +
+    // reconcile also returns the enriched linked_dirs (target_path +
     // broken_reason) that the response type requires.
-    const tool_links = c.symlinkService.reconcile(id);
+    const linked_dirs = c.symlinkService.reconcile(id);
     const { subscriptions, last_synced } = c.syncService.listWithState(id);
     const response: GetProjectStatusResponse = c.projectService.composeStatus(
       id,
       subscriptions,
-      tool_links,
+      linked_dirs,
       last_synced
     );
     return ctx.json(response);

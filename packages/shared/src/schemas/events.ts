@@ -24,7 +24,7 @@ import {
   SkillSchema,
   SubscriptionWithStateSchema,
   SyncLogSchema,
-  ToolLinkSchema
+  LinkedDirSchema
 } from "./common.js";
 
 // ---------- Event type registry ----------
@@ -49,10 +49,10 @@ export const EventType = {
   ConflictDetected: "conflict.detected",
   SyncCompleted: "sync.completed",
 
-  // Tool link lifecycle
-  ToolLinkCreated: "tool_link.created",
-  ToolLinkRemoved: "tool_link.removed",
-  ToolLinkBroken: "tool_link.broken",
+  // Linked Dir lifecycle
+  LinkedDirCreated: "linked_dir.created",
+  LinkedDirRemoved: "linked_dir.removed",
+  LinkedDirBroken: "linked_dir.broken",
 
   /**
    * Builtin-seed bootstrap finished.
@@ -138,17 +138,17 @@ export const SyncCompletedPayloadSchema = z.object({
   errors: z.number().int().nonnegative()
 });
 
-export const ToolLinkCreatedPayloadSchema = z.object({
-  link: ToolLinkSchema
+export const LinkedDirCreatedPayloadSchema = z.object({
+  link: LinkedDirSchema
 });
 
-export const ToolLinkRemovedPayloadSchema = z.object({
+export const LinkedDirRemovedPayloadSchema = z.object({
   project_id: z.number().int().positive(),
   tool_name: z.string()
 });
 
-export const ToolLinkBrokenPayloadSchema = z.object({
-  link: ToolLinkSchema
+export const LinkedDirBrokenPayloadSchema = z.object({
+  link: LinkedDirSchema
 });
 
 /**
@@ -231,16 +231,16 @@ export const AstackEventSchema = z.discriminatedUnion("type", [
     payload: SyncCompletedPayloadSchema
   }),
   z.object({
-    type: z.literal(EventType.ToolLinkCreated),
-    payload: ToolLinkCreatedPayloadSchema
+    type: z.literal(EventType.LinkedDirCreated),
+    payload: LinkedDirCreatedPayloadSchema
   }),
   z.object({
-    type: z.literal(EventType.ToolLinkRemoved),
-    payload: ToolLinkRemovedPayloadSchema
+    type: z.literal(EventType.LinkedDirRemoved),
+    payload: LinkedDirRemovedPayloadSchema
   }),
   z.object({
-    type: z.literal(EventType.ToolLinkBroken),
-    payload: ToolLinkBrokenPayloadSchema
+    type: z.literal(EventType.LinkedDirBroken),
+    payload: LinkedDirBrokenPayloadSchema
   }),
   z.object({
     type: z.literal(EventType.SeedCompleted),

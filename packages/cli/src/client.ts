@@ -13,11 +13,11 @@ import {
   AstackError,
   ErrorCode,
   type AstackErrorBody,
-  type CreateToolLinkRequest,
-  type CreateToolLinkResponse,
+  type CreateLinkedDirRequest,
+  type CreateLinkedDirResponse,
   type DeleteProjectResponse,
   type DeleteRepoResponse,
-  type DeleteToolLinkResponse,
+  type DeleteLinkedDirResponse,
   type GetProjectStatusResponse,
   type GetSkillDiffResponse,
   type ListProjectsResponse,
@@ -189,24 +189,24 @@ export class AstackClient {
     );
   }
 
-  // ---------- Tool links ----------
+  // ---------- Linked dirs ----------
 
-  async createToolLink(
+  async createLinkedDir(
     projectId: number,
-    body: CreateToolLinkRequest
-  ): Promise<CreateToolLinkResponse> {
-    return this.request<CreateToolLinkResponse>(
+    body: CreateLinkedDirRequest
+  ): Promise<CreateLinkedDirResponse> {
+    return this.request<CreateLinkedDirResponse>(
       "POST",
       `/api/projects/${projectId}/links`,
       body
     );
   }
 
-  async deleteToolLink(
+  async deleteLinkedDir(
     projectId: number,
     toolName: string
-  ): Promise<DeleteToolLinkResponse> {
-    return this.request<DeleteToolLinkResponse>(
+  ): Promise<DeleteLinkedDirResponse> {
+    return this.request<DeleteLinkedDirResponse>(
       "DELETE",
       `/api/projects/${projectId}/links/${encodeURIComponent(toolName)}`
     );

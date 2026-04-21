@@ -18,7 +18,7 @@ import { useState } from "react";
 
 const TABS: TabItem[] = [
   { id: "subs", label: "Subscriptions", badge: 12 },
-  { id: "tools", label: "Linked Tools", badge: 3 },
+  { id: "tools", label: "Linked Dirs", badge: 3 },
   { id: "history", label: "Sync History" },
   { id: "settings", label: "Settings" }
 ];
@@ -58,7 +58,7 @@ describe("Tabs", () => {
   it("sets aria-selected + roving tabindex correctly for the active tab", () => {
     render(<Harness initial="tools" />);
     const subs = screen.getByRole("tab", { name: /Subscriptions/ });
-    const tools = screen.getByRole("tab", { name: /Linked Tools/ });
+    const tools = screen.getByRole("tab", { name: /Linked Dirs/ });
     expect(tools).toHaveAttribute("aria-selected", "true");
     expect(tools).toHaveAttribute("tabindex", "0");
     expect(subs).toHaveAttribute("aria-selected", "false");
@@ -89,7 +89,7 @@ describe("Tabs", () => {
       fireEvent.keyDown(list, { key: "ArrowRight" });
     });
     expect(spy).toHaveBeenLastCalledWith("tools");
-    expect(document.activeElement?.textContent).toContain("Linked Tools");
+    expect(document.activeElement?.textContent).toContain("Linked Dirs");
   });
 
   it("ArrowLeft on the first tab wraps to the last", () => {

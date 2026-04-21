@@ -171,7 +171,7 @@ linkCmd
   .action((tool: string) => wrap(() => runLinkRemove(tool)));
 linkCmd
   .command("list")
-  .description("list configured tool links")
+  .description("list configured linked dirs")
   .action(() => wrap(() => runLinkList()));
 
 // ---------- server ----------

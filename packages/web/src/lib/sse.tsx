@@ -66,9 +66,9 @@ export function SseProvider({ children }: PropsWithChildren): React.JSX.Element 
       "skill.updated",
       "conflict.detected",
       "sync.completed",
-      "tool_link.created",
-      "tool_link.removed",
-      "tool_link.broken",
+      "linked_dir.created",
+      "linked_dir.removed",
+      "linked_dir.broken",
       "seed.completed",
       "harness.changed"
     ];

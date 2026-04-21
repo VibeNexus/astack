@@ -48,9 +48,9 @@ export async function runStatus(): Promise<void> {
   }
   printTable(rows);
 
-  if (status.tool_links.length > 0) {
+  if (status.linked_dirs.length > 0) {
     printNext(
-      `tools linked: ${status.tool_links.map((l) => l.tool_name).join(", ")}`
+      `tools linked: ${status.linked_dirs.map((l) => l.tool_name).join(", ")}`
     );
   }
 }

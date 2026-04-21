@@ -228,7 +228,7 @@ describe("HTTP API", () => {
       expect(list.json.total).toBe(1);
     });
 
-    it("returns status with subscriptions and tool_links arrays", async () => {
+    it("returns status with subscriptions and linked_dirs arrays", async () => {
       const reg = await request<{ project: { id: number } }>(
         app,
         "POST",
@@ -238,11 +238,11 @@ describe("HTTP API", () => {
       const status = await request<{
         project: { id: number };
         subscriptions: unknown[];
-        tool_links: unknown[];
+        linked_dirs: unknown[];
       }>(app, "GET", `/api/projects/${reg.json.project.id}/status`);
       expect(status.status).toBe(200);
       expect(status.json.subscriptions).toEqual([]);
-      expect(status.json.tool_links).toEqual([]);
+      expect(status.json.linked_dirs).toEqual([]);
     });
   });
 
@@ -359,7 +359,7 @@ describe("HTTP API", () => {
     });
   });
 
-  describe("tool links", () => {
+  describe("linked dirs", () => {
     it("creates and removes a symlink for cursor", async () => {
       const proj = await request<{ project: { id: number } }>(
         app,

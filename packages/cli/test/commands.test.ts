@@ -343,7 +343,7 @@ describe("CLI command functions", () => {
       expect(out).toContain("local-ahead");
     });
 
-    it("status shows linked tools when present", async () => {
+    it("status shows linked dirs when present", async () => {
       await bootstrap();
       await runLinkAdd("cursor");
       const { out } = await captureStdout(() => runStatus());
@@ -542,7 +542,7 @@ describe("CLI command functions", () => {
     it("list prints hint when empty", async () => {
       await bootstrap();
       const { out } = await captureStdout(() => runLinkList());
-      expect(out).toContain("no tool links");
+      expect(out).toContain("no linked dirs");
     });
 
     it("remove deletes the link", async () => {

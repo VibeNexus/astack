@@ -394,7 +394,7 @@ export class SubscriptionService {
     const project = this.deps.projects.mustFindById(projectId);
     const existing = readManifest(project.path, project.primary_tool);
 
-    const tool_links = this.deps.projects.listToolLinkRows(projectId);
+    const linked_dirs = this.deps.projects.listLinkedDirRows(projectId);
     const rows = this.subs.listByProject(projectId);
 
     const subs: NormalizedSubscription[] = [];
@@ -410,7 +410,7 @@ export class SubscriptionService {
       project_id: project.id,
       server_url: this.deps.serverUrl,
       primary_tool: project.primary_tool,
-      linked_tools: tool_links.map((l) => l.tool_name),
+      linked_tools: linked_dirs.map((l) => l.tool_name),
       subscriptions: dedupeSubscriptions(subs),
       last_synced: existing?.last_synced ?? null
     };

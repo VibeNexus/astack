@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { ErrorCode, EventType, ToolLinkStatus } from "@astack/shared";
+import { ErrorCode, EventType, LinkedDirStatus } from "@astack/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { LINKED_SUBDIRS } from "../src/services/symlink.js";
@@ -48,12 +48,12 @@ describe("SymlinkService", () => {
 
       expect(link.tool_name).toBe("cursor");
       expect(link.dir_name).toBe(".cursor");
-      expect(link.status).toBe(ToolLinkStatus.Active);
+      expect(link.status).toBe(LinkedDirStatus.Active);
 
       assertLinksActive("cursor");
 
       expect(
-        h.emitted.some((e) => e.event.type === EventType.ToolLinkCreated)
+        h.emitted.some((e) => e.event.type === EventType.LinkedDirCreated)
       ).toBe(true);
     });
 
@@ -89,7 +89,7 @@ describe("SymlinkService", () => {
           tool_name: "cursor"
         })
       ).toThrowError(
-        expect.objectContaining({ code: ErrorCode.TOOL_LINK_ALREADY_EXISTS })
+        expect.objectContaining({ code: ErrorCode.LINKED_DIR_ALREADY_EXISTS })
       );
     });
 
@@ -122,14 +122,14 @@ describe("SymlinkService", () => {
       ).toBe(false);
       expect(h.symlinkService.list(project.id)).toEqual([]);
       expect(
-        h.emitted.some((e) => e.event.type === EventType.ToolLinkRemoved)
+        h.emitted.some((e) => e.event.type === EventType.LinkedDirRemoved)
       ).toBe(true);
     });
 
-    it("throws TOOL_LINK_NOT_FOUND when link is unknown", () => {
+    it("throws LINKED_DIR_NOT_FOUND when link is unknown", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       expect(() => h.symlinkService.removeLink(project.id, "nope")).toThrowError(
-        expect.objectContaining({ code: ErrorCode.TOOL_LINK_NOT_FOUND })
+        expect.objectContaining({ code: ErrorCode.LINKED_DIR_NOT_FOUND })
       );
     });
 
@@ -162,9 +162,9 @@ describe("SymlinkService", () => {
       // Now commands/ is a real empty dir — not a symlink (broken in our terms).
 
       const links = h.symlinkService.reconcile(project.id);
-      expect(links[0].status).toBe(ToolLinkStatus.Broken);
+      expect(links[0].status).toBe(LinkedDirStatus.Broken);
       expect(
-        h.emitted.some((e) => e.event.type === EventType.ToolLinkBroken)
+        h.emitted.some((e) => e.event.type === EventType.LinkedDirBroken)
       ).toBe(true);
     });
 
@@ -173,7 +173,7 @@ describe("SymlinkService", () => {
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
       const before = h.emitted.length;
       const links = h.symlinkService.reconcile(project.id);
-      expect(links[0].status).toBe(ToolLinkStatus.Active);
+      expect(links[0].status).toBe(LinkedDirStatus.Active);
       // No new events when status didn't change.
       expect(h.emitted.length).toBe(before);
     });
@@ -188,25 +188,25 @@ describe("SymlinkService", () => {
       expect(targets.skills).toBe(path.join("..", ".claude", "skills"));
     });
 
-    it("throws TOOL_LINK_NOT_FOUND for unknown tool", () => {
+    it("throws LINKED_DIR_NOT_FOUND for unknown tool", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       expect(() =>
         h.symlinkService.readLinkTargets(project.id, "nope")
       ).toThrowError(
-        expect.objectContaining({ code: ErrorCode.TOOL_LINK_NOT_FOUND })
+        expect.objectContaining({ code: ErrorCode.LINKED_DIR_NOT_FOUND })
       );
     });
   });
 
   // v0.3: target_path + broken_reason enrichment
-  describe("ToolLink enrichment", () => {
+  describe("LinkedDir enrichment", () => {
     it("active link exposes absolute target_path and null broken_reason", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       const link = h.symlinkService.addLink({
         project_id: project.id,
         tool_name: "cursor"
       });
-      expect(link.status).toBe(ToolLinkStatus.Active);
+      expect(link.status).toBe(LinkedDirStatus.Active);
       expect(link.broken_reason).toBeNull();
       // target_path is derived from `commands/` (first subdir). readlink
       // returned `../.claude/commands`; we resolve relative to the symlink's
@@ -226,7 +226,7 @@ describe("SymlinkService", () => {
       });
 
       const links = h.symlinkService.list(project.id);
-      expect(links[0]?.status).toBe(ToolLinkStatus.Broken);
+      expect(links[0]?.status).toBe(LinkedDirStatus.Broken);
       expect(links[0]?.broken_reason).toBe("target_missing");
       // target_path still reports where the link WANTED to go — helps UX
       // (we can say "→ <path> (missing!)").
@@ -243,7 +243,7 @@ describe("SymlinkService", () => {
       fs.mkdirSync(path.join(h.projectDir.path, ".cursor/commands"));
 
       const links = h.symlinkService.list(project.id);
-      expect(links[0]?.status).toBe(ToolLinkStatus.Broken);
+      expect(links[0]?.status).toBe(LinkedDirStatus.Broken);
       expect(links[0]?.broken_reason).toBe("not_a_symlink");
       // target_path falls back to the OTHER subdir (skills/) which is
       // still a healthy symlink — showing users *something* is better
@@ -263,12 +263,12 @@ describe("SymlinkService", () => {
       });
 
       const links = h.symlinkService.list(project.id);
-      expect(links[0]?.status).toBe(ToolLinkStatus.Removed);
+      expect(links[0]?.status).toBe(LinkedDirStatus.Removed);
       expect(links[0]?.broken_reason).toBeNull();
       expect(links[0]?.target_path).toBeNull();
     });
 
-    it("reconcile emits ToolLinkBroken event with enriched payload", () => {
+    it("reconcile emits LinkedDirBroken event with enriched payload", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
       fs.rmSync(path.join(h.projectDir.path, ".claude"), {
@@ -280,7 +280,7 @@ describe("SymlinkService", () => {
       h.symlinkService.reconcile(project.id);
       const brokenEvent = h.emitted
         .slice(before)
-        .find((e) => e.event.type === EventType.ToolLinkBroken);
+        .find((e) => e.event.type === EventType.LinkedDirBroken);
       expect(brokenEvent).toBeDefined();
       const link = (
         brokenEvent!.event.payload as unknown as {

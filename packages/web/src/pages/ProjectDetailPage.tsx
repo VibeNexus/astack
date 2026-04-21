@@ -4,11 +4,11 @@ import type * as React from "react";
  *
  * Layout:
  *   ProjectHeader (crumb, title, path, SummaryBar, Sync/Push buttons)
- *   Tabs — Subscriptions / Linked Tools / Sync History / Settings
+ *   Tabs — Subscriptions / Linked Dirs / Sync History / Settings
  *   TabPanel for each
  *
  * State management:
- *   - `status` — full GetProjectStatusResponse (SubscriptionWithState[] + ToolLink[])
+ *   - `status` — full GetProjectStatusResponse (SubscriptionWithState[] + LinkedDir[])
  *   - `useSearchParams` drives the active tab so deep links + browser
  *     back/forward both work. Invalid `?tab=<unknown>` falls back to
  *     'subscriptions' silently (see validateTab).
@@ -18,7 +18,7 @@ import type * as React from "react";
  *
  * PRs after this one:
  *   PR7 — Browse Skills Drawer + SyncResultCard (the real + Add flow)
- *   PR8 — Linked Tools / Sync History / Settings tab content
+ *   PR8 — Linked Dirs / Sync History / Settings tab content
  *   PR9 — Mobile responsive + CommandPalette extensions + a11y polish
  */
 
@@ -31,7 +31,7 @@ import {
   makeSubscribedRefSet
 } from "../components/project/BrowseSkillsDrawer.js";
 import { HarnessPanel } from "../components/project/HarnessPanel.js";
-import { LinkedToolsPanel } from "../components/project/LinkedToolsPanel.js";
+import { LinkedDirsPanel } from "../components/project/LinkedDirsPanel.js";
 import { ProjectHeader } from "../components/project/ProjectHeader.js";
 import { ProjectSettingsPanel } from "../components/project/ProjectSettingsPanel.js";
 import { SubscriptionsPanel } from "../components/project/SubscriptionsPanel.js";
@@ -100,9 +100,9 @@ export function ProjectDetailPage(): React.JSX.Element {
   }, [load]);
 
   useEventListener("skill.updated", () => void load());
-  useEventListener("tool_link.created", () => void load());
-  useEventListener("tool_link.removed", () => void load());
-  useEventListener("tool_link.broken", () => void load());
+  useEventListener("linked_dir.created", () => void load());
+  useEventListener("linked_dir.removed", () => void load());
+  useEventListener("linked_dir.broken", () => void load());
   useEventListener("conflict.detected", () => void load());
 
   const actions = useProjectActions(projectId, load);
@@ -220,7 +220,7 @@ export function ProjectDetailPage(): React.JSX.Element {
   const attentionCount = status.subscriptions.filter(
     (s) => s.state !== "synced"
   ).length;
-  const brokenTools = status.tool_links.filter(
+  const brokenTools = status.linked_dirs.filter(
     (t) => t.status === "broken"
   ).length;
   const tabs: readonly TabItem[] = [
@@ -231,8 +231,8 @@ export function ProjectDetailPage(): React.JSX.Element {
     },
     {
       id: "tools",
-      label: "Linked Tools",
-      badge: status.tool_links.length
+      label: "Linked Dirs",
+      badge: status.linked_dirs.length
     },
     { id: "history", label: "Sync History" },
     {
@@ -257,7 +257,7 @@ export function ProjectDetailPage(): React.JSX.Element {
     <div className="space-y-6">
       <ProjectHeader
         status={status}
-        toolLinks={status.tool_links}
+        linkedDirs={status.linked_dirs}
         onSync={handleSync}
         onPush={handlePush}
       />
@@ -287,7 +287,7 @@ export function ProjectDetailPage(): React.JSX.Element {
           )}
           {brokenTools > 0 && (
             <span>
-              {brokenTools} broken tool link{brokenTools === 1 ? "" : "s"}
+              {brokenTools} broken linked dir{brokenTools === 1 ? "" : "s"}
             </span>
           )}
         </div>
@@ -311,9 +311,9 @@ export function ProjectDetailPage(): React.JSX.Element {
       </TabPanel>
 
       <TabPanel tabId="tools" activeId={activeTab} idPrefix="project-detail">
-        <LinkedToolsPanel
+        <LinkedDirsPanel
           project={status.project}
-          links={status.tool_links}
+          links={status.linked_dirs}
           onAdd={async (tool) => {
             await actions.addLink(tool);
           }}

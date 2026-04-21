@@ -138,14 +138,14 @@ describe("AstackClient", () => {
     expect(cap.url).toBe(`${baseUrl}/health`);
   });
 
-  it("deleteToolLink URL-encodes the tool name", async () => {
+  it("deleteLinkedDir URL-encodes the tool name", async () => {
     const cap: { method?: string; url?: string } = {};
     const fetchImpl = okFetch(
       { deleted: true, tool_name: "cursor" } as const,
       cap
     );
     const client = new AstackClient({ baseUrl, fetchImpl });
-    await client.deleteToolLink(1, "weird/name");
+    await client.deleteLinkedDir(1, "weird/name");
     expect(cap.url).toContain("weird%2Fname");
     expect(cap.method).toBe("DELETE");
   });
@@ -237,10 +237,10 @@ describe("AstackClient", () => {
       expect(cap.url).toBe(`${baseUrl}/api/projects/1/push`);
     });
 
-    it("createToolLink POSTs to /links", async () => {
+    it("createLinkedDir POSTs to /links", async () => {
       const cap: { method?: string; url?: string } = {};
       const client = new AstackClient({ baseUrl, fetchImpl: smokeFetch(cap) });
-      await client.createToolLink(1, { tool_name: "cursor" });
+      await client.createLinkedDir(1, { tool_name: "cursor" });
       expect(cap.method).toBe("POST");
       expect(cap.url).toBe(`${baseUrl}/api/projects/1/links`);
     });

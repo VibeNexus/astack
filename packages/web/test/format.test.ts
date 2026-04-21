@@ -2,7 +2,7 @@
  * Tests for format helpers.
  */
 
-import { SubscriptionState, ToolLinkStatus } from "@astack/shared";
+import { SubscriptionState, LinkedDirStatus } from "@astack/shared";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -10,7 +10,7 @@ import {
   shortHash,
   subscriptionPriority,
   subscriptionStatusInfo,
-  toolLinkStatusInfo
+  linkedDirStatusInfo
 } from "../src/lib/format.js";
 
 describe("shortHash", () => {
@@ -81,10 +81,10 @@ describe("subscriptionPriority", () => {
   });
 });
 
-describe("toolLinkStatusInfo", () => {
+describe("linkedDirStatusInfo", () => {
   it("maps each status to a label + tone", () => {
-    expect(toolLinkStatusInfo(ToolLinkStatus.Active).tone).toBe("accent");
-    expect(toolLinkStatusInfo(ToolLinkStatus.Broken).tone).toBe("error");
-    expect(toolLinkStatusInfo(ToolLinkStatus.Removed).tone).toBe("muted");
+    expect(linkedDirStatusInfo(LinkedDirStatus.Active).tone).toBe("accent");
+    expect(linkedDirStatusInfo(LinkedDirStatus.Broken).tone).toBe("error");
+    expect(linkedDirStatusInfo(LinkedDirStatus.Removed).tone).toBe("muted");
   });
 });

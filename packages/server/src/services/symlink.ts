@@ -15,7 +15,7 @@
  *   - We do NOT cleanup the link's parent dir on remove — it may contain
  *     other tool-specific files.
  *
- * v0.3: every returned `ToolLink` is enriched via `enrichLink()` with
+ * v0.3: every returned `LinkedDir` is enriched via `enrichLink()` with
  *   - `target_path`: the resolved absolute target of the first subdir's
  *     symlink (we pick `commands/` because it's always present; `skills/`
  *     would be equivalent). The dashboard needs ONE target to show; we
@@ -36,15 +36,15 @@ import {
   AstackError,
   ErrorCode,
   EventType,
-  ToolLinkBrokenReason,
-  ToolLinkStatus,
+  LinkedDirBrokenReason,
+  LinkedDirStatus,
   type Project,
-  type ToolLink,
-  type ToolLinkBrokenReason as ToolLinkBrokenReasonT
+  type LinkedDir,
+  type LinkedDirBrokenReason as LinkedDirBrokenReasonT
 } from "@astack/shared";
 
 import type { Db } from "../db/connection.js";
-import { ToolLinkRepository, type ToolLinkRow } from "../db/tool-links.js";
+import { LinkedDirRepository, type LinkedDirRow } from "../db/linked-dirs.js";
 import type { EventBus } from "../events.js";
 import {
   createSymlink,
@@ -80,7 +80,7 @@ interface SubdirInspection {
   target: string | null;
   health: "active" | "broken" | "missing";
   /** Populated when we can say WHY the health check failed. */
-  brokenReason: ToolLinkBrokenReasonT | null;
+  brokenReason: LinkedDirBrokenReasonT | null;
 }
 
 /**
@@ -101,7 +101,7 @@ function inspectSubdir(linkPath: string): SubdirInspection {
         linkPath,
         target: null,
         health: "broken",
-        brokenReason: ToolLinkBrokenReason.PermissionDenied
+        brokenReason: LinkedDirBrokenReason.PermissionDenied
       };
     }
     // Any other fs error: treat as broken (best we can do).
@@ -109,7 +109,7 @@ function inspectSubdir(linkPath: string): SubdirInspection {
       linkPath,
       target: null,
       health: "broken",
-      brokenReason: ToolLinkBrokenReason.PermissionDenied
+      brokenReason: LinkedDirBrokenReason.PermissionDenied
     };
   }
 
@@ -119,7 +119,7 @@ function inspectSubdir(linkPath: string): SubdirInspection {
       linkPath,
       target: null,
       health: "broken",
-      brokenReason: ToolLinkBrokenReason.NotASymlink
+      brokenReason: LinkedDirBrokenReason.NotASymlink
     };
   }
 
@@ -132,7 +132,7 @@ function inspectSubdir(linkPath: string): SubdirInspection {
       linkPath,
       target: null,
       health: "broken",
-      brokenReason: ToolLinkBrokenReason.PermissionDenied
+      brokenReason: LinkedDirBrokenReason.PermissionDenied
     };
   }
   // readlink may return relative; resolve against the link's parent dir.
@@ -148,31 +148,31 @@ function inspectSubdir(linkPath: string): SubdirInspection {
       linkPath,
       target: resolved,
       health: "broken",
-      brokenReason: ToolLinkBrokenReason.TargetMissing
+      brokenReason: LinkedDirBrokenReason.TargetMissing
     };
   }
 }
 
 /**
- * Combine per-subdir inspections into a single ToolLink-level status
+ * Combine per-subdir inspections into a single LinkedDir-level status
  * + the fields the UI wants.
  */
 function rollupInspections(
   subs: SubdirInspection[]
 ): {
-  status: ToolLinkStatus;
+  status: LinkedDirStatus;
   target_path: string | null;
-  broken_reason: ToolLinkBrokenReasonT | null;
+  broken_reason: LinkedDirBrokenReasonT | null;
 } {
   // Status: active only if every subdir is active; removed only if every
   // subdir is missing; broken otherwise.
-  let status: ToolLinkStatus;
+  let status: LinkedDirStatus;
   if (subs.every((s) => s.health === "active")) {
-    status = ToolLinkStatus.Active;
+    status = LinkedDirStatus.Active;
   } else if (subs.every((s) => s.health === "missing")) {
-    status = ToolLinkStatus.Removed;
+    status = LinkedDirStatus.Removed;
   } else {
-    status = ToolLinkStatus.Broken;
+    status = LinkedDirStatus.Broken;
   }
 
   // target_path: pick the first subdir that has a target. The two subdirs
@@ -184,8 +184,8 @@ function rollupInspections(
   // broken_reason: pick the first subdir's reason when we're broken. If
   // subdirs disagree (one missing, one wrong type), the first one wins —
   // rare in practice since both subs are created in the same addLink call.
-  let broken_reason: ToolLinkBrokenReasonT | null = null;
-  if (status === ToolLinkStatus.Broken) {
+  let broken_reason: LinkedDirBrokenReasonT | null = null;
+  if (status === LinkedDirStatus.Broken) {
     const firstBroken = subs.find((s) => s.brokenReason !== null);
     broken_reason = firstBroken?.brokenReason ?? null;
   }
@@ -194,19 +194,19 @@ function rollupInspections(
 }
 
 export class SymlinkService {
-  private readonly links: ToolLinkRepository;
+  private readonly links: LinkedDirRepository;
 
   constructor(private readonly deps: SymlinkServiceDeps) {
-    this.links = new ToolLinkRepository(deps.db);
+    this.links = new LinkedDirRepository(deps.db);
   }
 
   /**
-   * Read the filesystem state of a single tool_link row and return the
-   * enriched domain ToolLink. Every public API that exposes a ToolLink
+   * Read the filesystem state of a single linked_dir row and return the
+   * enriched domain LinkedDir. Every public API that exposes a LinkedDir
    * goes through this helper to guarantee target_path + broken_reason
    * are always populated.
    */
-  private enrichLink(project: Project, row: ToolLinkRow): ToolLink {
+  private enrichLink(project: Project, row: LinkedDirRow): LinkedDir {
     const toolDirAbs = path.join(project.path, row.dir_name);
     const subs = LINKED_SUBDIRS.map((sub) =>
       inspectSubdir(path.join(toolDirAbs, sub))
@@ -224,13 +224,13 @@ export class SymlinkService {
    * Create symlinks from `<project>/<dir_name>/commands` → `../.claude/commands`
    * and the same for `skills`.
    *
-   * If a previous tool_link row exists (even if marked broken), it's replaced.
+   * If a previous linked_dir row exists (even if marked broken), it's replaced.
    */
   addLink(input: {
     project_id: number;
     tool_name: string;
     dir_name?: string;
-  }): ToolLink {
+  }): LinkedDir {
     const project = this.deps.projects.mustFindById(input.project_id);
     const tool_name = input.tool_name.trim();
     if (!tool_name) {
@@ -245,7 +245,7 @@ export class SymlinkService {
     const existing = this.links.findByProjectTool(project.id, tool_name);
     if (existing) {
       throw new AstackError(
-        ErrorCode.TOOL_LINK_ALREADY_EXISTS,
+        ErrorCode.LINKED_DIR_ALREADY_EXISTS,
         `tool '${tool_name}' already linked`,
         { project_id: project.id, tool_name }
       );
@@ -278,7 +278,7 @@ export class SymlinkService {
     const enriched = this.enrichLink(project, row);
 
     this.deps.events.emit({
-      type: EventType.ToolLinkCreated,
+      type: EventType.LinkedDirCreated,
       payload: { link: enriched }
     });
 
@@ -294,7 +294,7 @@ export class SymlinkService {
     const row = this.links.findByProjectTool(projectId, tool_name);
     if (!row) {
       throw new AstackError(
-        ErrorCode.TOOL_LINK_NOT_FOUND,
+        ErrorCode.LINKED_DIR_NOT_FOUND,
         `no link for tool '${tool_name}'`,
         { project_id: projectId, tool_name }
       );
@@ -311,29 +311,29 @@ export class SymlinkService {
     this.links.deleteByProjectTool(projectId, tool_name);
 
     this.deps.events.emit({
-      type: EventType.ToolLinkRemoved,
+      type: EventType.LinkedDirRemoved,
       payload: { project_id: projectId, tool_name }
     });
   }
 
   /**
-   * Walk all tool_links for a project and reconcile the `status` column with
+   * Walk all linked_dirs for a project and reconcile the `status` column with
    * the actual filesystem state. Returns the post-reconcile rows, fully
    * enriched with target_path + broken_reason.
    */
-  reconcile(projectId: number): ToolLink[] {
+  reconcile(projectId: number): LinkedDir[] {
     const project = this.deps.projects.mustFindById(projectId);
     const rows = this.links.listByProject(projectId);
-    const out: ToolLink[] = [];
+    const out: LinkedDir[] = [];
 
     for (const row of rows) {
       const enriched = this.enrichLink(project, row);
 
       if (enriched.status !== row.status) {
         this.links.updateStatus(row.id, enriched.status);
-        if (enriched.status === ToolLinkStatus.Broken) {
+        if (enriched.status === LinkedDirStatus.Broken) {
           this.deps.events.emit({
-            type: EventType.ToolLinkBroken,
+            type: EventType.LinkedDirBroken,
             payload: { link: enriched }
           });
         }
@@ -349,7 +349,7 @@ export class SymlinkService {
    * endpoints that just want a snapshot (e.g. project status before any
    * write action).
    */
-  list(projectId: number): ToolLink[] {
+  list(projectId: number): LinkedDir[] {
     const project = this.deps.projects.mustFindById(projectId);
     const rows = this.links.listByProject(projectId);
     return rows.map((r) => this.enrichLink(project, r));
@@ -364,7 +364,7 @@ export class SymlinkService {
     const row = this.links.findByProjectTool(projectId, toolName);
     if (!row) {
       throw new AstackError(
-        ErrorCode.TOOL_LINK_NOT_FOUND,
+        ErrorCode.LINKED_DIR_NOT_FOUND,
         `no link for tool '${toolName}'`,
         { project_id: projectId, tool_name: toolName }
       );

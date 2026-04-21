@@ -2,7 +2,7 @@
  * Core domain types for Astack.
  *
  * These types describe the business entities: Repo, Project, Skill,
- * Subscription, ToolLink, SyncLog. They are the stable shape exchanged
+ * Subscription, LinkedDir, SyncLog. They are the stable shape exchanged
  * between server, cli, and web.
  *
  * SOURCE OF TRUTH hierarchy (see design.md § Eng Review decision 2):
@@ -10,7 +10,7 @@
  *   - Skill current version    → upstream-mirror git HEAD (SQLite caches it)
  *   - Project subscriptions    → <project>/.claude/.astack.json (SQLite mirrors)
  *   - Sync history             → SQLite only (sync_logs)
- *   - Symlink state            → filesystem (SQLite caches in tool_links)
+ *   - Symlink state            → filesystem (SQLite caches in linked_dirs)
  */
 
 // ---------- Primitives ----------
@@ -90,30 +90,30 @@ export const RepoKind = {
 export type RepoKind = (typeof RepoKind)[keyof typeof RepoKind];
 
 /** Liveness of a symlink on disk. */
-export const ToolLinkStatus = {
+export const LinkedDirStatus = {
   Active: "active",
   Broken: "broken",
   Removed: "removed"
 } as const;
-export type ToolLinkStatus = (typeof ToolLinkStatus)[keyof typeof ToolLinkStatus];
+export type LinkedDirStatus = (typeof LinkedDirStatus)[keyof typeof LinkedDirStatus];
 
 /**
- * Why a tool link is broken. Only meaningful when `status === "broken"`.
+ * Why a linked dir is broken. Only meaningful when `status === "broken"`.
  *
  *   - "target_missing"    — symlink exists but the target path is gone
  *   - "not_a_symlink"     — the entry at dir_name is a regular file/dir, not a symlink
  *   - "permission_denied" — could not `lstat` the entry (EACCES / EPERM)
  *
  * Derived at query time (`fs.readlinkSync` + `fs.statSync`), never persisted.
- * Added in v0.3 for the Linked Tools tab's "why broken" UI.
+ * Added in v0.3 for the Linked Dirs tab's "why broken" UI.
  */
-export const ToolLinkBrokenReason = {
+export const LinkedDirBrokenReason = {
   TargetMissing: "target_missing",
   NotASymlink: "not_a_symlink",
   PermissionDenied: "permission_denied"
 } as const;
-export type ToolLinkBrokenReason =
-  (typeof ToolLinkBrokenReason)[keyof typeof ToolLinkBrokenReason];
+export type LinkedDirBrokenReason =
+  (typeof LinkedDirBrokenReason)[keyof typeof LinkedDirBrokenReason];
 
 /** Conflict resolution strategy (see design.md Implementation TODO #1). */
 export const ResolveStrategy = {
@@ -333,14 +333,14 @@ export interface SyncLog {
 }
 
 /** Symlink from a derived tool dir (.cursor, .codebuddy) to .claude. */
-export interface ToolLink {
+export interface LinkedDir {
   id: Id;
   project_id: Id;
   /** Short name, e.g. "cursor". */
   tool_name: string;
   /** Dir name under project root, e.g. ".cursor". */
   dir_name: string;
-  status: ToolLinkStatus;
+  status: LinkedDirStatus;
   /**
    * Resolved absolute target path of the symlink, when one can be read.
    * `null` for rows where the entry isn't a symlink or can't be inspected.
@@ -351,7 +351,7 @@ export interface ToolLink {
    * Why the link is broken. Only meaningful when `status === "broken"`.
    * `null` for active / removed rows. Derived at query time. Added in v0.3.
    */
-  broken_reason: ToolLinkBrokenReason | null;
+  broken_reason: LinkedDirBrokenReason | null;
   created_at: IsoDateTime;
 }
 
@@ -386,7 +386,7 @@ export interface ProjectStatus {
   project: Project;
   subscriptions: SubscriptionWithState[];
   /** Links from derived tool dirs (.cursor, .codebuddy) to .claude. */
-  tool_links: ToolLink[];
+  linked_dirs: LinkedDir[];
   /** Timestamp of last successful sync of any skill in this project. */
   last_synced: IsoDateTime | null;
 }

@@ -3,8 +3,8 @@ import type * as React from "react";
 import type {
   PrimaryToolStatus,
   Project,
-  ToolLink,
-  ToolLinkBrokenReason
+  LinkedDir,
+  LinkedDirBrokenReason
 } from "@astack/shared";
 import { useRef, useState } from "react";
 
@@ -12,14 +12,14 @@ import { Button, Card, IconButton, StatusDot, type StatusTone } from "../ui/inde
 import { relativeTime } from "../../lib/format.js";
 
 /**
- * LinkedToolsPanel — the Linked Tools tab body.
+ * LinkedDirsPanel — the Linked Dirs tab body.
  *
- * v0.3 design review problem: "Linked tools" section used to be three
+ * v0.3 design review problem: "Linked Dirs" section used to be three
  * unlabeled buttons (+ cursor / + codebuddy / + windsurf) with no way
  * to see where each symlink actually pointed or why a broken one was
  * broken. This panel fixes all of that.
  *
- * Each tool link shows:
+ * Each linked dir shows:
  *   - status (active / broken / removed) with a descriptive tone dot
  *   - target_path (→ /absolute/path) so users confirm what they linked
  *   - broken_reason when broken (target_missing / not_a_symlink / perm)
@@ -28,7 +28,7 @@ import { relativeTime } from "../../lib/format.js";
  * v0.4 patch: the project's primary tool dir itself (e.g. `.claude`) is
  * rendered as a special "Primary" row at the top. It's the target of
  * every symlink but isn't one itself; users can see its initialization
- * state (initialized/empty/missing) alongside the linked tools. No
+ * state (initialized/empty/missing) alongside the linked dirs. No
  * Unlink button — you can't unlink the source of truth.
  *
  * Add flow is a dropdown instead of three buttons — avoids the AI-slop
@@ -36,33 +36,33 @@ import { relativeTime } from "../../lib/format.js";
  * (tracked as post-v0.3 work).
  */
 
-export interface LinkedToolsPanelProps {
+export interface LinkedDirsPanelProps {
   project: Project;
-  links: ToolLink[];
+  links: LinkedDir[];
   onAdd: (toolName: string) => void | Promise<void>;
   onRemove: (toolName: string) => void | Promise<void>;
 }
 
 const KNOWN_TOOLS = ["cursor", "codebuddy", "windsurf"] as const;
 
-export function LinkedToolsPanel({
+export function LinkedDirsPanel({
   project,
   links,
   onAdd,
   onRemove
-}: LinkedToolsPanelProps): React.JSX.Element {
+}: LinkedDirsPanelProps): React.JSX.Element {
   const linkedNames = new Set(links.map((l) => l.tool_name));
   const canAdd = KNOWN_TOOLS.filter((t) => !linkedNames.has(t));
   // Primary row is always visible — it's conceptually the "0th entry"
   // (the target everything else points at). It counts toward the
-  // header total so users see "Linked Tools 2" instead of 1+phantom.
+  // header total so users see "Linked Dirs 2" instead of 1+phantom.
   const totalCount = links.length + 1;
 
   return (
     <section className="space-y-3 pt-5">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-fg-secondary">
-          Linked Tools
+          Linked Dirs
           <span className="ml-2 text-xs text-fg-tertiary tabular">
             {totalCount}
           </span>
@@ -76,7 +76,7 @@ export function LinkedToolsPanel({
           <div className="flex flex-col items-start gap-3 py-8 px-6 border border-dashed border-line-subtle rounded-lg">
             <div>
               <div className="text-base font-semibold text-fg-primary">
-                Link a tool to share your skills
+                Link a dir to share your skills
               </div>
               <div className="text-sm text-fg-secondary mt-1 max-w-md">
                 Astack symlinks{" "}
@@ -94,7 +94,7 @@ export function LinkedToolsPanel({
           </div>
         ) : (
           links.map((l) => (
-            <ToolLinkCard key={l.id} link={l} onRemove={onRemove} />
+            <LinkedDirCard key={l.id} link={l} onRemove={onRemove} />
           ))
         )}
       </div>
@@ -107,7 +107,7 @@ export function LinkedToolsPanel({
 /**
  * The canonical tool dir (default `.claude`) rendered as a list item.
  *
- * Visually matches ToolLinkCard so the list reads as homogeneous, but:
+ * Visually matches LinkedDirCard so the list reads as homogeneous, but:
  *   - a "Primary" tag replaces the status label
  *   - no Unlink button (can't unlink the source of truth)
  *   - `target_path` is itself — no arrow / resolution line
@@ -194,13 +194,13 @@ function describePrimary(status: PrimaryToolStatus | null): PrimaryMeta {
   }
 }
 
-// ---------- ToolLinkCard ----------
+// ---------- LinkedDirCard ----------
 
-function ToolLinkCard({
+function LinkedDirCard({
   link,
   onRemove
 }: {
-  link: ToolLink;
+  link: LinkedDir;
   onRemove: (toolName: string) => void | Promise<void>;
 }): React.JSX.Element {
   const tone =
@@ -260,7 +260,7 @@ function ToolLinkCard({
   );
 }
 
-function statusLabel(status: ToolLink["status"]): string {
+function statusLabel(status: LinkedDir["status"]): string {
   switch (status) {
     case "active":
       return "active";
@@ -271,7 +271,7 @@ function statusLabel(status: ToolLink["status"]): string {
   }
 }
 
-function brokenReasonMessage(r: ToolLinkBrokenReason): string {
+function brokenReasonMessage(r: LinkedDirBrokenReason): string {
   switch (r) {
     case "target_missing":
       return "Target directory no longer exists. Unlink + re-add to fix.";
@@ -311,7 +311,7 @@ function AddLinkMenu({
         aria-haspopup="menu"
         aria-expanded={open}
       >
-        + Link a tool <span className="text-fg-tertiary">▾</span>
+        + Link a dir <span className="text-fg-tertiary">▾</span>
       </button>
       {open ? (
         <div

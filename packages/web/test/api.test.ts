@@ -133,16 +133,16 @@ describe("api client", () => {
     ]);
   });
 
-  it("URL-encodes deleteToolLink tool name", async () => {
+  it("URL-encodes deleteLinkedDir tool name", async () => {
     const calls = mockFetch(() => ({ status: 200, body: {} }));
-    await api.deleteToolLink(1, "weird/name");
+    await api.deleteLinkedDir(1, "weird/name");
     expect(calls[0]!.url).toBe("/api/projects/1/links/weird%2Fname");
     expect(calls[0]!.method).toBe("DELETE");
   });
 
-  it("createToolLink, unsubscribe, refreshRepo, deleteRepo, listRepos", async () => {
+  it("createLinkedDir, unsubscribe, refreshRepo, deleteRepo, listRepos", async () => {
     const calls = mockFetch(() => ({ status: 200, body: {} }));
-    await api.createToolLink(1, { tool_name: "cursor" });
+    await api.createLinkedDir(1, { tool_name: "cursor" });
     await api.unsubscribe(1, 2);
     await api.refreshRepo(3);
     await api.deleteRepo(4);

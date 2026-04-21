@@ -17,12 +17,12 @@ import {
   type Project,
   type ProjectStatus,
   type SubscriptionWithState,
-  type ToolLink
+  type LinkedDir
 } from "@astack/shared";
 
 import type { Db } from "../db/connection.js";
 import { ProjectRepository, type ProjectRow } from "../db/projects.js";
-import { ToolLinkRepository } from "../db/tool-links.js";
+import { LinkedDirRepository } from "../db/linked-dirs.js";
 import type { EventBus } from "../events.js";
 import type { Logger } from "../logger.js";
 
@@ -68,11 +68,11 @@ function derivePrimaryToolStatus(
 
 export class ProjectService {
   private readonly projects: ProjectRepository;
-  private readonly toolLinks: ToolLinkRepository;
+  private readonly linkedDirs: LinkedDirRepository;
 
   constructor(private readonly deps: ProjectServiceDeps) {
     this.projects = new ProjectRepository(deps.db);
-    this.toolLinks = new ToolLinkRepository(deps.db);
+    this.linkedDirs = new LinkedDirRepository(deps.db);
   }
 
   /**
@@ -136,7 +136,7 @@ export class ProjectService {
   }
 
   /**
-   * Unregister a project. Cascades to subscriptions / sync_logs / tool_links
+   * Unregister a project. Cascades to subscriptions / sync_logs / linked_dirs
    * via FK ON DELETE CASCADE. Does NOT touch the filesystem.
    */
   remove(projectId: number): void {
@@ -187,57 +187,57 @@ export class ProjectService {
    *
    * Returns a skeleton ProjectStatus; SubscriptionService fills in the
    * `subscriptions` array, and SymlinkService provides enriched
-   * `tool_links` (with target_path + broken_reason) via the route layer.
+   * `linked_dirs` (with target_path + broken_reason) via the route layer.
    *
-   * v0.3: callers pass `tool_links` because SymlinkService owns the
+   * v0.3: callers pass `linked_dirs` because SymlinkService owns the
    * filesystem-derived fields (target_path, broken_reason) that the repo
    * layer alone can't produce.
    */
   buildStatusSkeleton(
     projectId: number,
-    tool_links: ToolLink[]
+    linked_dirs: LinkedDir[]
   ): Omit<ProjectStatus, "subscriptions"> {
     const project = this.mustFindById(projectId);
     return {
       project,
-      tool_links,
+      linked_dirs,
       last_synced: null
     };
   }
 
   /**
-   * Raw tool_link rows straight from the DB. Callers who only need
+   * Raw linked_dir rows straight from the DB. Callers who only need
    * identity (id, tool_name, dir_name) can use this; anything that wants
    * the live filesystem state (`target_path`, `broken_reason`, accurate
    * `status`) must go through SymlinkService.list() instead.
    */
-  listToolLinkRows(projectId: number): Array<{
+  listLinkedDirRows(projectId: number): Array<{
     id: number;
     project_id: number;
     tool_name: string;
     dir_name: string;
-    status: ToolLink["status"];
-    created_at: ToolLink["created_at"];
+    status: LinkedDir["status"];
+    created_at: LinkedDir["created_at"];
   }> {
-    return this.toolLinks.listByProject(projectId);
+    return this.linkedDirs.listByProject(projectId);
   }
 
   /**
    * Exposed so callers (e.g. status endpoint) can compose complete
    * ProjectStatus without re-fetching. Service caller is responsible for
    * computing the sync state per subscription and for supplying
-   * filesystem-enriched tool_links (via SymlinkService).
+   * filesystem-enriched linked_dirs (via SymlinkService).
    */
   composeStatus(
     projectId: number,
     subscriptions: SubscriptionWithState[],
-    tool_links: ToolLink[],
+    linked_dirs: LinkedDir[],
     last_synced: string | null
   ): ProjectStatus {
-    const skeleton = this.buildStatusSkeleton(projectId, tool_links);
+    const skeleton = this.buildStatusSkeleton(projectId, linked_dirs);
     return {
       project: skeleton.project,
-      tool_links: skeleton.tool_links,
+      linked_dirs: skeleton.linked_dirs,
       subscriptions,
       last_synced
     };
