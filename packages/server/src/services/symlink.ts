@@ -1,32 +1,32 @@
 /**
- * SymlinkService — manages symlinks from derived tool dirs (.cursor, .codebuddy)
+ * SymlinkService — manages symlinks from derived tool dirs (.cursor, .codebuddy, .codex, .gemini, .windsurf)
  * to the project's primary tool dir (.claude).
  *
- * Per design.md § Eng Review decision 3:
- *   - Link grain is SUBDIRECTORY level:
- *       <project>/.cursor/commands  → ../.claude/commands
- *       <project>/.cursor/skills    → ../.claude/skills
- *     (not the whole .cursor directory — each AI tool may have its own
- *     root-level config files we must not clobber.)
+ * v0.5 semantic change: link grain is **WHOLE DIRECTORY** (not subdirectory):
+ *     <project>/.cursor      → ../.claude
+ *     <project>/.codebuddy   → ../.claude
+ *     <project>/.codex       → ../.claude
+ *     <project>/.gemini      → ../.claude
  *
- *   - Only POSIX-style symlinks. Windows must run in Developer Mode; we
- *     surface SYMLINK_UNSUPPORTED and let the user turn it on.
+ * Rationale: users expect `.cursor` (or any linked tool) to behave as a
+ * full alias of `.claude` — every skill, every command, every config
+ * under `.claude/` shows up. The previous v0.3 subdirectory-level link
+ * (only `commands/` + `skills/`) surfaced as a confusing "→ .claude/commands"
+ * target in the UI and hid the fact that two subdir symlinks existed.
  *
- *   - We do NOT cleanup the link's parent dir on remove — it may contain
- *     other tool-specific files.
+ * Trade-off accepted (per user decision): if a tool has its own
+ * root-level config files (settings.json, rules, etc.), linking the
+ * whole dir means those settings must live inside `.claude` too.
+ * `addLink` refuses to overwrite a pre-existing real `<dir_name>`
+ * directory with `SYMLINK_TARGET_OCCUPIED`; users clean up manually
+ * before linking.
  *
- * v0.3: every returned `LinkedDir` is enriched via `enrichLink()` with
- *   - `target_path`: the resolved absolute target of the first subdir's
- *     symlink (we pick `commands/` because it's always present; `skills/`
- *     would be equivalent). The dashboard needs ONE target to show; we
- *     don't need the per-subdir breakdown at the row level.
- *   - `broken_reason`: categorical reason the link is broken, so the UI
- *     can say "target missing" vs "not a symlink" vs "permission denied"
- *     instead of a useless "broken" status dot.
- *
- * These fields are never persisted. Every `listByProject` / `findByProjectTool`
- * call returns fresh values derived from the filesystem right now — if the
- * user deletes `.claude/` out of band, the next read reflects that.
+ * Design notes retained from v0.3:
+ *   - POSIX-style symlinks only. Windows must run in Developer Mode;
+ *     we surface SYMLINK_UNSUPPORTED and let the user turn it on.
+ *   - Every returned `LinkedDir` is enriched via `enrichLink()` with
+ *     `target_path` + `broken_reason` derived from the filesystem at
+ *     read time — never persisted.
  */
 
 import fs from "node:fs";
@@ -56,9 +56,6 @@ import type { Logger } from "../logger.js";
 
 import type { ProjectService } from "./project.js";
 
-/** Subdirectories we link for each tool. */
-export const LINKED_SUBDIRS = ["commands", "skills"] as const;
-
 export interface SymlinkServiceDeps {
   db: Db;
   events: EventBus;
@@ -67,11 +64,10 @@ export interface SymlinkServiceDeps {
 }
 
 /**
- * What one subdirectory symlink looks like on disk.
- * Combines the health check with the enriched state the UI wants.
+ * Inspection of the single whole-dir symlink.
  */
-interface SubdirInspection {
-  /** Absolute path to the symlink entry on disk. */
+interface LinkInspection {
+  /** Absolute path to the entry on disk (e.g. <project>/.cursor). */
   linkPath: string;
   /**
    * Absolute resolved target, if this is a symlink. `null` if the entry
@@ -84,10 +80,10 @@ interface SubdirInspection {
 }
 
 /**
- * Inspect a single subdirectory symlink. Derives everything the UI needs
+ * Inspect the tool-dir symlink. Derives everything the UI needs
  * (target, health, reason) from a single lstat + readlink + stat pass.
  */
-function inspectSubdir(linkPath: string): SubdirInspection {
+function inspectLink(linkPath: string): LinkInspection {
   let lst: fs.Stats;
   try {
     lst = fs.lstatSync(linkPath);
@@ -154,43 +150,33 @@ function inspectSubdir(linkPath: string): SubdirInspection {
 }
 
 /**
- * Combine per-subdir inspections into a single LinkedDir-level status
- * + the fields the UI wants.
+ * Map the inspection into LinkedDir-level status.
  */
-function rollupInspections(
-  subs: SubdirInspection[]
-): {
+function rollupInspection(inspection: LinkInspection): {
   status: LinkedDirStatus;
   target_path: string | null;
   broken_reason: LinkedDirBrokenReasonT | null;
 } {
-  // Status: active only if every subdir is active; removed only if every
-  // subdir is missing; broken otherwise.
-  let status: LinkedDirStatus;
-  if (subs.every((s) => s.health === "active")) {
-    status = LinkedDirStatus.Active;
-  } else if (subs.every((s) => s.health === "missing")) {
-    status = LinkedDirStatus.Removed;
-  } else {
-    status = LinkedDirStatus.Broken;
+  switch (inspection.health) {
+    case "active":
+      return {
+        status: LinkedDirStatus.Active,
+        target_path: inspection.target,
+        broken_reason: null
+      };
+    case "missing":
+      return {
+        status: LinkedDirStatus.Removed,
+        target_path: null,
+        broken_reason: null
+      };
+    case "broken":
+      return {
+        status: LinkedDirStatus.Broken,
+        target_path: inspection.target,
+        broken_reason: inspection.brokenReason
+      };
   }
-
-  // target_path: pick the first subdir that has a target. The two subdirs
-  // always point at sibling directories under the same primary tool dir,
-  // so showing one is enough for the "→ .claude" hint in the UI.
-  const firstWithTarget = subs.find((s) => s.target !== null);
-  const target_path = firstWithTarget?.target ?? null;
-
-  // broken_reason: pick the first subdir's reason when we're broken. If
-  // subdirs disagree (one missing, one wrong type), the first one wins —
-  // rare in practice since both subs are created in the same addLink call.
-  let broken_reason: LinkedDirBrokenReasonT | null = null;
-  if (status === LinkedDirStatus.Broken) {
-    const firstBroken = subs.find((s) => s.brokenReason !== null);
-    broken_reason = firstBroken?.brokenReason ?? null;
-  }
-
-  return { status, target_path, broken_reason };
 }
 
 export class SymlinkService {
@@ -207,11 +193,9 @@ export class SymlinkService {
    * are always populated.
    */
   private enrichLink(project: Project, row: LinkedDirRow): LinkedDir {
-    const toolDirAbs = path.join(project.path, row.dir_name);
-    const subs = LINKED_SUBDIRS.map((sub) =>
-      inspectSubdir(path.join(toolDirAbs, sub))
-    );
-    const { status, target_path, broken_reason } = rollupInspections(subs);
+    const linkPath = path.join(project.path, row.dir_name);
+    const inspection = inspectLink(linkPath);
+    const { status, target_path, broken_reason } = rollupInspection(inspection);
     return {
       ...row,
       status,
@@ -221,10 +205,14 @@ export class SymlinkService {
   }
 
   /**
-   * Create symlinks from `<project>/<dir_name>/commands` → `../.claude/commands`
-   * and the same for `skills`.
+   * Create the whole-dir symlink: `<project>/<dir_name>` → `<primary_tool>`.
    *
-   * If a previous linked_dir row exists (even if marked broken), it's replaced.
+   * Refuses to overwrite a pre-existing real directory or file at the
+   * link path (SYMLINK_TARGET_OCCUPIED) — users must clean up first
+   * to avoid silent data loss of tool-specific root-level config.
+   *
+   * If the target `<project>/<primary_tool>` does not exist, it's
+   * created (so the link isn't broken from the moment it's made).
    */
   addLink(input: {
     project_id: number;
@@ -251,23 +239,22 @@ export class SymlinkService {
       );
     }
 
-    const toolDirAbs = path.join(project.path, dir_name);
+    const linkPath = path.join(project.path, dir_name);
+    const relativeTarget = project.primary_tool; // sibling → ".claude"
 
-    // Ensure parent tool dir exists.
-    fs.mkdirSync(toolDirAbs, { recursive: true });
+    // Ensure the primary tool dir itself exists, so the link isn't
+    // born broken. We don't create skills/commands subdirs anymore —
+    // the whole-dir link resolves regardless of what's inside.
+    const primaryAbs = path.join(project.path, project.primary_tool);
+    fs.mkdirSync(primaryAbs, { recursive: true });
 
-    // Create one symlink per subdir.
-    for (const sub of LINKED_SUBDIRS) {
-      const linkPath = path.join(toolDirAbs, sub);
-      // Relative target makes the link portable across machines.
-      const relativeTarget = path.join("..", project.primary_tool, sub);
-
-      // Ensure the target exists (so the link isn't created broken).
-      const primarySubAbs = path.join(project.path, project.primary_tool, sub);
-      fs.mkdirSync(primarySubAbs, { recursive: true });
-
-      createSymlink(linkPath, relativeTarget);
-    }
+    // createSymlink() refuses to overwrite a real dir/file — that's
+    // what we want. It DOES replace a stale symlink, which is fine
+    // (legacy subdir-link layouts leave a parent real dir, not a
+    // symlink, so they'll correctly hit SYMLINK_TARGET_OCCUPIED and
+    // force the user to delete .cursor/ before re-linking with new
+    // semantics).
+    createSymlink(linkPath, relativeTarget);
 
     const row = this.links.insert({
       project_id: project.id,
@@ -286,8 +273,9 @@ export class SymlinkService {
   }
 
   /**
-   * Remove the symlinks for a tool. Fails if no DB row exists.
-   * Leaves the parent `dir_name` directory alone.
+   * Remove the tool-dir symlink. Only unlinks the symlink entry itself;
+   * any real file/dir at that path is left alone (shouldn't be there in
+   * the v0.5 model, but we're defensive).
    */
   removeLink(projectId: number, tool_name: string): void {
     const project = this.deps.projects.mustFindById(projectId);
@@ -300,12 +288,9 @@ export class SymlinkService {
       );
     }
 
-    const toolDirAbs = path.join(project.path, row.dir_name);
-    for (const sub of LINKED_SUBDIRS) {
-      const linkPath = path.join(toolDirAbs, sub);
-      if (isSymlink(linkPath)) {
-        fs.unlinkSync(linkPath);
-      }
+    const linkPath = path.join(project.path, row.dir_name);
+    if (isSymlink(linkPath)) {
+      fs.unlinkSync(linkPath);
     }
 
     this.links.deleteByProjectTool(projectId, tool_name);
@@ -356,8 +341,11 @@ export class SymlinkService {
   }
 
   /**
-   * Diagnostic: read the current on-disk target of a symlink, if present.
-   * Used by `astack link list` to show users where each symlink points.
+   * Diagnostic: read the current on-disk target of the symlink, if present.
+   * Used by `astack link list` to show users where the symlink points.
+   *
+   * Returns a single-entry record keyed by the dir_name (e.g. ".cursor")
+   * for shape compatibility with older callers that expected a Record.
    */
   readLinkTargets(projectId: number, toolName: string): Record<string, string | null> {
     const project = this.deps.projects.mustFindById(projectId);
@@ -369,15 +357,12 @@ export class SymlinkService {
         { project_id: projectId, tool_name: toolName }
       );
     }
-    const out: Record<string, string | null> = {};
-    for (const sub of LINKED_SUBDIRS) {
-      out[sub] = readSymlink(path.join(project.path, row.dir_name, sub));
-    }
-    return out;
+    const linkPath = path.join(project.path, row.dir_name);
+    return { [row.dir_name]: readSymlink(linkPath) };
   }
 }
 
 // Silence unused-import warning for the legacy `inspectSymlink` helper —
 // kept exported from fs-util for other callers, but SymlinkService now
-// uses the richer `inspectSubdir` defined in this file.
+// uses the richer `inspectLink` defined in this file.
 void inspectSymlink;

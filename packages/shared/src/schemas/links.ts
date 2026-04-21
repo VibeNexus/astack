@@ -5,9 +5,10 @@
  *   POST   /api/projects/:id/links                 — create tool symlink
  *   DELETE /api/projects/:id/links/:tool           — remove tool symlink
  *
- * Implements multi-tool compatibility via symlinks (decision 3):
- * `.cursor/` and `.codebuddy/` are symlinked to subdirectories of `.claude/`.
- * Link is at the `commands/` and `skills/` subdir level, not the root dir.
+ * Implements multi-tool compatibility via whole-dir symlinks (v0.5):
+ * `.cursor/`, `.codebuddy/`, `.codex/`, `.gemini/`, `.windsurf/` are
+ * symlinked to `.claude/` at the directory level, so every AI tool
+ * sees the same skills and commands.
  */
 
 import { z } from "zod";

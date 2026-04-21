@@ -526,7 +526,7 @@ describe("CLI command functions", () => {
       expect(out).toContain("linked cursor");
       expect(
         fs
-          .lstatSync(path.join(projectDir.path, ".cursor/commands"))
+          .lstatSync(path.join(projectDir.path, ".cursor"))
           .isSymbolicLink()
       ).toBe(true);
     });

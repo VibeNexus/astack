@@ -81,8 +81,9 @@ export function LinkedDirsPanel({
               <div className="text-sm text-fg-secondary mt-1 max-w-md">
                 Astack symlinks{" "}
                 <code className="font-mono text-fg-primary">.cursor/</code>,{" "}
-                <code className="font-mono text-fg-primary">.codebuddy/</code>,
-                and{" "}
+                <code className="font-mono text-fg-primary">.codebuddy/</code>,{" "}
+                <code className="font-mono text-fg-primary">.codex/</code>,{" "}
+                <code className="font-mono text-fg-primary">.gemini/</code>, and{" "}
                 <code className="font-mono text-fg-primary">.windsurf/</code> to
                 your project&apos;s{" "}
                 <code className="font-mono text-fg-primary">

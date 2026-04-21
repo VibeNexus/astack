@@ -377,7 +377,7 @@ describe("HTTP API", () => {
       expect(add.json.link.tool_name).toBe("cursor");
       expect(
         fs
-          .lstatSync(path.join(projectDir.path, ".cursor/commands"))
+          .lstatSync(path.join(projectDir.path, ".cursor"))
           .isSymbolicLink()
       ).toBe(true);
 

@@ -2,6 +2,9 @@
  * Tests for SymlinkService.
  *
  * Symlinks are real, not mocked. macOS supports POSIX symlinks out of the box.
+ *
+ * v0.5 semantics: whole-dir symlinks (<project>/.cursor → ../.claude),
+ * NOT subdirectory-level (used to be .cursor/commands + .cursor/skills).
  */
 
 import fs from "node:fs";
@@ -9,8 +12,6 @@ import path from "node:path";
 
 import { ErrorCode, EventType, LinkedDirStatus } from "@astack/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import { LINKED_SUBDIRS } from "../src/services/symlink.js";
 
 import { createHarness, type Harness } from "./helpers/harness.js";
 
@@ -25,21 +26,20 @@ describe("SymlinkService", () => {
     await h.cleanup();
   });
 
-  function assertLinksActive(toolName: string): void {
-    const dir = path.join(h.projectDir.path, `.${toolName}`);
-    for (const sub of LINKED_SUBDIRS) {
-      const linkPath = path.join(dir, sub);
-      const stat = fs.lstatSync(linkPath);
-      expect(stat.isSymbolicLink()).toBe(true);
-      const target = fs.readlinkSync(linkPath);
-      expect(target).toBe(path.join("..", ".claude", sub));
-      // target resolves (followSymlinks should work).
-      expect(fs.existsSync(linkPath)).toBe(true);
-    }
+  /** Assert <project>/.{toolName} is a symlink pointing at the primary dir. */
+  function assertLinkActive(toolName: string): void {
+    const linkPath = path.join(h.projectDir.path, `.${toolName}`);
+    const stat = fs.lstatSync(linkPath);
+    expect(stat.isSymbolicLink()).toBe(true);
+    const target = fs.readlinkSync(linkPath);
+    // Relative target so the link is portable across machines.
+    expect(target).toBe(".claude");
+    // Target resolves via followSymlinks.
+    expect(fs.existsSync(linkPath)).toBe(true);
   }
 
   describe("addLink", () => {
-    it("creates symlinks at commands/ and skills/ subdirs", () => {
+    it("creates a whole-dir symlink from .<tool> to ../<primary_tool>", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       const link = h.symlinkService.addLink({
         project_id: project.id,
@@ -50,11 +50,21 @@ describe("SymlinkService", () => {
       expect(link.dir_name).toBe(".cursor");
       expect(link.status).toBe(LinkedDirStatus.Active);
 
-      assertLinksActive("cursor");
+      assertLinkActive("cursor");
 
       expect(
         h.emitted.some((e) => e.event.type === EventType.LinkedDirCreated)
       ).toBe(true);
+    });
+
+    it("supports .codex and .gemini (new v0.5 tools)", () => {
+      const project = h.projectService.register({ path: h.projectDir.path });
+
+      h.symlinkService.addLink({ project_id: project.id, tool_name: "codex" });
+      assertLinkActive("codex");
+
+      h.symlinkService.addLink({ project_id: project.id, tool_name: "gemini" });
+      assertLinkActive("gemini");
     });
 
     it("honors explicit dir_name override", () => {
@@ -64,11 +74,9 @@ describe("SymlinkService", () => {
         tool_name: "cursor",
         dir_name: ".cursor-custom"
       });
-      expect(
-        fs.lstatSync(
-          path.join(h.projectDir.path, ".cursor-custom/commands")
-        ).isSymbolicLink()
-      ).toBe(true);
+      const linkPath = path.join(h.projectDir.path, ".cursor-custom");
+      expect(fs.lstatSync(linkPath).isSymbolicLink()).toBe(true);
+      expect(fs.readlinkSync(linkPath)).toBe(".claude");
     });
 
     it("rejects empty tool_name", () => {
@@ -95,10 +103,9 @@ describe("SymlinkService", () => {
 
     it("refuses to overwrite a real directory at the link path", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
-      // Pre-create a real commands/ directory under .cursor.
-      fs.mkdirSync(path.join(h.projectDir.path, ".cursor", "commands"), {
-        recursive: true
-      });
+      // Pre-create a real .cursor/ directory (e.g. user already has
+      // cursor-specific config there).
+      fs.mkdirSync(path.join(h.projectDir.path, ".cursor"), { recursive: true });
       expect(() =>
         h.symlinkService.addLink({
           project_id: project.id,
@@ -108,18 +115,30 @@ describe("SymlinkService", () => {
         expect.objectContaining({ code: ErrorCode.SYMLINK_TARGET_OCCUPIED })
       );
     });
+
+    it("creates the primary tool dir if it doesn't exist, so the link is not born broken", () => {
+      const project = h.projectService.register({ path: h.projectDir.path });
+      // Sanity: make sure .claude doesn't exist yet.
+      const primary = path.join(h.projectDir.path, ".claude");
+      if (fs.existsSync(primary)) fs.rmSync(primary, { recursive: true });
+
+      const link = h.symlinkService.addLink({
+        project_id: project.id,
+        tool_name: "cursor"
+      });
+      expect(link.status).toBe(LinkedDirStatus.Active);
+      expect(fs.existsSync(primary)).toBe(true);
+    });
   });
 
   describe("removeLink", () => {
-    it("removes symlinks and the DB row", () => {
+    it("removes the symlink and the DB row", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
 
       h.symlinkService.removeLink(project.id, "cursor");
 
-      expect(
-        fs.existsSync(path.join(h.projectDir.path, ".cursor/commands"))
-      ).toBe(false);
+      expect(fs.existsSync(path.join(h.projectDir.path, ".cursor"))).toBe(false);
       expect(h.symlinkService.list(project.id)).toEqual([]);
       expect(
         h.emitted.some((e) => e.event.type === EventType.LinkedDirRemoved)
@@ -132,60 +151,43 @@ describe("SymlinkService", () => {
         expect.objectContaining({ code: ErrorCode.LINKED_DIR_NOT_FOUND })
       );
     });
-
-    it("leaves the parent tool dir in place (may contain other config)", () => {
-      const project = h.projectService.register({ path: h.projectDir.path });
-      h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
-      // User drops a settings.json in .cursor/.
-      fs.writeFileSync(
-        path.join(h.projectDir.path, ".cursor/settings.json"),
-        "{}"
-      );
-      h.symlinkService.removeLink(project.id, "cursor");
-      expect(
-        fs.existsSync(path.join(h.projectDir.path, ".cursor/settings.json"))
-      ).toBe(true);
-    });
   });
 
   describe("reconcile", () => {
-    it("marks status=broken when a link subdir is deleted externally", () => {
+    it("marks status=broken when the symlink is replaced by a real dir externally", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
 
-      // User breaks the link.
-      fs.unlinkSync(path.join(h.projectDir.path, ".cursor/commands"));
-      fs.mkdirSync(
-        path.join(h.projectDir.path, ".cursor/commands"),
-        { recursive: true }
-      );
-      // Now commands/ is a real empty dir — not a symlink (broken in our terms).
+      // User breaks the link: replace the symlink with a real empty dir.
+      const linkPath = path.join(h.projectDir.path, ".cursor");
+      fs.unlinkSync(linkPath);
+      fs.mkdirSync(linkPath);
 
       const links = h.symlinkService.reconcile(project.id);
-      expect(links[0].status).toBe(LinkedDirStatus.Broken);
+      expect(links[0]?.status).toBe(LinkedDirStatus.Broken);
+      expect(links[0]?.broken_reason).toBe("not_a_symlink");
       expect(
         h.emitted.some((e) => e.event.type === EventType.LinkedDirBroken)
       ).toBe(true);
     });
 
-    it("returns active status unchanged when links are healthy", () => {
+    it("returns active status unchanged when link is healthy", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
       const before = h.emitted.length;
       const links = h.symlinkService.reconcile(project.id);
-      expect(links[0].status).toBe(LinkedDirStatus.Active);
+      expect(links[0]?.status).toBe(LinkedDirStatus.Active);
       // No new events when status didn't change.
       expect(h.emitted.length).toBe(before);
     });
   });
 
   describe("readLinkTargets", () => {
-    it("returns the symlink targets for each subdir", () => {
+    it("returns the symlink target keyed by dir_name", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
       const targets = h.symlinkService.readLinkTargets(project.id, "cursor");
-      expect(targets.commands).toBe(path.join("..", ".claude", "commands"));
-      expect(targets.skills).toBe(path.join("..", ".claude", "skills"));
+      expect(targets).toEqual({ ".cursor": ".claude" });
     });
 
     it("throws LINKED_DIR_NOT_FOUND for unknown tool", () => {
@@ -198,7 +200,6 @@ describe("SymlinkService", () => {
     });
   });
 
-  // v0.3: target_path + broken_reason enrichment
   describe("LinkedDir enrichment", () => {
     it("active link exposes absolute target_path and null broken_reason", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
@@ -208,18 +209,15 @@ describe("SymlinkService", () => {
       });
       expect(link.status).toBe(LinkedDirStatus.Active);
       expect(link.broken_reason).toBeNull();
-      // target_path is derived from `commands/` (first subdir). readlink
-      // returned `../.claude/commands`; we resolve relative to the symlink's
-      // parent so the consumer sees an absolute path.
-      expect(link.target_path).toBe(
-        path.join(h.projectDir.path, ".claude", "commands")
-      );
+      // target_path resolves the relative readlink against the link's
+      // parent, yielding an absolute path to the primary tool dir.
+      expect(link.target_path).toBe(path.join(h.projectDir.path, ".claude"));
     });
 
-    it("broken_reason=target_missing when the target dir vanishes", () => {
+    it("broken_reason=target_missing when the primary dir vanishes", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
-      // Delete the primary .claude/ dir (both subdirs).
+      // Delete the primary .claude/ dir the symlink points at.
       fs.rmSync(path.join(h.projectDir.path, ".claude"), {
         recursive: true,
         force: true
@@ -231,36 +229,30 @@ describe("SymlinkService", () => {
       // target_path still reports where the link WANTED to go — helps UX
       // (we can say "→ <path> (missing!)").
       expect(links[0]?.target_path).toBe(
-        path.join(h.projectDir.path, ".claude", "commands")
+        path.join(h.projectDir.path, ".claude")
       );
     });
 
     it("broken_reason=not_a_symlink when the entry is a real directory", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
-      // Replace the commands symlink with a real dir.
-      fs.unlinkSync(path.join(h.projectDir.path, ".cursor/commands"));
-      fs.mkdirSync(path.join(h.projectDir.path, ".cursor/commands"));
+      // Replace the symlink with a real dir.
+      const linkPath = path.join(h.projectDir.path, ".cursor");
+      fs.unlinkSync(linkPath);
+      fs.mkdirSync(linkPath);
 
       const links = h.symlinkService.list(project.id);
       expect(links[0]?.status).toBe(LinkedDirStatus.Broken);
       expect(links[0]?.broken_reason).toBe("not_a_symlink");
-      // target_path falls back to the OTHER subdir (skills/) which is
-      // still a healthy symlink — showing users *something* is better
-      // than null when one side works.
-      expect(links[0]?.target_path).toBe(
-        path.join(h.projectDir.path, ".claude", "skills")
-      );
+      // No target to report for a plain directory — it's not a symlink.
+      expect(links[0]?.target_path).toBeNull();
     });
 
-    it("status=removed + broken_reason=null when both subdirs are gone", () => {
+    it("status=removed + broken_reason=null when the link is gone", () => {
       const project = h.projectService.register({ path: h.projectDir.path });
       h.symlinkService.addLink({ project_id: project.id, tool_name: "cursor" });
-      // Remove the whole .cursor dir — both subdirs now missing.
-      fs.rmSync(path.join(h.projectDir.path, ".cursor"), {
-        recursive: true,
-        force: true
-      });
+      // Remove the symlink entirely.
+      fs.unlinkSync(path.join(h.projectDir.path, ".cursor"));
 
       const links = h.symlinkService.list(project.id);
       expect(links[0]?.status).toBe(LinkedDirStatus.Removed);
@@ -288,9 +280,7 @@ describe("SymlinkService", () => {
         }
       ).link;
       expect(link.broken_reason).toBe("target_missing");
-      expect(link.target_path).toBe(
-        path.join(h.projectDir.path, ".claude", "commands")
-      );
+      expect(link.target_path).toBe(path.join(h.projectDir.path, ".claude"));
     });
   });
 });

@@ -35,8 +35,7 @@ export {
 } from "./services/subscription.js";
 export {
   SymlinkService,
-  type SymlinkServiceDeps,
-  LINKED_SUBDIRS
+  type SymlinkServiceDeps
 } from "./services/symlink.js";
 export {
   SyncService,
