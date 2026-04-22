@@ -16,7 +16,9 @@
     "test:coverage": "pnpm -r run test:coverage",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
-    "clean": "pnpm -r run clean && rm -rf node_modules"
+    "clean": "pnpm -r run clean && rm -rf node_modules",
+    "web:build": "pnpm -C packages/web build",
+    "server:refresh": "pnpm -C packages/web build && (astack server stop || true) && astack server start"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
