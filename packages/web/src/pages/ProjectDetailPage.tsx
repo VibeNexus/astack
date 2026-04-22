@@ -24,7 +24,9 @@ import type * as React from "react";
 
 import type {
   BootstrapResolution,
+  BootstrapUnmatched,
   GetProjectStatusResponse,
+  LocalSkill,
   ProjectBootstrapResult,
   SubscribeResponse,
   SyncResponse
@@ -38,6 +40,7 @@ import {
 } from "../components/project/BrowseSkillsDrawer.js";
 import { HarnessPanel } from "../components/project/HarnessPanel.js";
 import { LinkedDirsPanel } from "../components/project/LinkedDirsPanel.js";
+import { LocalSkillsPanel } from "../components/project/LocalSkillsPanel.js";
 import { ProjectHeader } from "../components/project/ProjectHeader.js";
 import { ProjectSettingsPanel } from "../components/project/ProjectSettingsPanel.js";
 import { SubscriptionsPanel } from "../components/project/SubscriptionsPanel.js";
@@ -51,7 +54,15 @@ import { useEventListener } from "../lib/sse.js";
 import { useProjectActions } from "../lib/useProjectActions.js";
 
 // Stable set of tab ids — used for validating ?tab= and keyed lookup.
-const TAB_IDS = ["subscriptions", "tools", "history", "harness", "settings"] as const;
+// v0.7: `local-skills` inserted between `subscriptions` and `tools`.
+const TAB_IDS = [
+  "subscriptions",
+  "local-skills",
+  "tools",
+  "history",
+  "harness",
+  "settings"
+] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 /** `?tab=<hack>` → fallback to 'subscriptions'. */
@@ -68,6 +79,15 @@ export function ProjectDetailPage(): React.JSX.Element {
   const [bootstrap, setBootstrap] = useState<ProjectBootstrapResult | null>(
     null
   );
+  // v0.7: per spec §1.14, data refresh follows the project convention
+  // of `useState<T | null>` + `useCallback` loader + `useEventListener`
+  // (no react-query dep). LocalSkills + their suggestions live as
+  // siblings to `status` / `bootstrap` so an SSE fires only the query
+  // it affects.
+  const [localSkills, setLocalSkills] = useState<LocalSkill[]>([]);
+  const [localSkillSuggestions, setLocalSkillSuggestions] = useState<
+    BootstrapUnmatched[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
   const activeTab = validateTab(params.get("tab"));
@@ -122,10 +142,34 @@ export function ProjectDetailPage(): React.JSX.Element {
     }
   }, [projectId]);
 
+  /**
+   * v0.7: refresh the local-skills list + adoption suggestions.
+   * Independent from `load` / `loadBootstrap` so `local_skills.changed`
+   * only invalidates this slice (per spec §A8 SSE convergence).
+   */
+  const loadLocalSkills = useCallback(async () => {
+    if (!Number.isFinite(projectId) || projectId <= 0) return;
+    try {
+      const [list, sug] = await Promise.all([
+        api.listLocalSkills(projectId),
+        api.listLocalSkillSuggestions(projectId)
+      ]);
+      setLocalSkills(list.items);
+      setLocalSkillSuggestions(sug.suggestions);
+    } catch {
+      // Same philosophy as loadBootstrap — non-critical; leave last-good
+      // snapshot visible rather than crashing the tab. A real outage
+      // shows in the Subscriptions call below (handled in `load`).
+      setLocalSkills([]);
+      setLocalSkillSuggestions([]);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     void load();
     void loadBootstrap();
-  }, [load, loadBootstrap]);
+    void loadLocalSkills();
+  }, [load, loadBootstrap, loadLocalSkills]);
 
   useEventListener("skill.updated", () => void load());
   useEventListener("linked_dir.created", () => void load());
@@ -143,6 +187,16 @@ export function ProjectDetailPage(): React.JSX.Element {
     if (e.payload.project_id !== projectId) return;
     void load();
     void loadBootstrap();
+    // v0.7: resolve can auto-adopt leftover unmatched entries
+    // (via ProjectBootstrapService.scanAndAutoSubscribe → autoAdopt),
+    // so refresh local-skills too. Cheap — it's two idempotent GETs.
+    void loadLocalSkills();
+  });
+  // v0.7 local skills SSE (spec §A8) — single coarse event on
+  // adopt / unadopt / rescan. Re-fetch only the local-skills slice.
+  useEventListener("local_skills.changed", (e) => {
+    if (e.payload.project_id !== projectId) return;
+    void loadLocalSkills();
   });
 
   const actions = useProjectActions(projectId, load);
@@ -268,6 +322,13 @@ export function ProjectDetailPage(): React.JSX.Element {
       id: "subscriptions",
       label: "Subscriptions",
       badge: status.subscriptions.length
+    },
+    {
+      id: "local-skills",
+      label: "Local Skills",
+      // v0.7: total of adopted + auto rows. Spec §1.17 — Panel reads
+      // from the same slice so the badge stays in sync with the list.
+      badge: localSkills.length
     },
     {
       id: "tools",
@@ -409,6 +470,82 @@ export function ProjectDetailPage(): React.JSX.Element {
           onRemove={(tool) => {
             if (!confirm(`Remove ${tool} link?`)) return;
             void actions.removeLink(tool);
+          }}
+        />
+      </TabPanel>
+
+      <TabPanel
+        tabId="local-skills"
+        activeId={activeTab}
+        idPrefix="project-detail"
+      >
+        <LocalSkillsPanel
+          projectId={projectId}
+          localSkills={localSkills}
+          suggestions={localSkillSuggestions}
+          onAdopt={async (entries) => {
+            const result = await api.adoptLocalSkills(projectId, entries);
+            // SSE `local_skills.changed` will trigger loadLocalSkills(),
+            // but run it now too so the UI doesn't flash a stale state
+            // between apply and event delivery.
+            await loadLocalSkills();
+            const succeeded = result.succeeded.length;
+            const failed = result.failed.length;
+            if (succeeded > 0 && failed === 0) {
+              toast.ok(
+                `Adopted ${succeeded} local skill${succeeded === 1 ? "" : "s"}`
+              );
+            } else if (succeeded > 0 && failed > 0) {
+              toast.warn(
+                `Adopted ${succeeded}, ${failed} failed`,
+                result.failed
+                  .slice(0, 3)
+                  .map((f) => `${f.type}/${f.name}: ${f.message}`)
+                  .join("; ")
+              );
+            } else if (failed > 0) {
+              toast.error(
+                `Adopt failed (${failed})`,
+                result.failed
+                  .slice(0, 3)
+                  .map((f) => `${f.type}/${f.name}: ${f.message}`)
+                  .join("; ")
+              );
+            }
+            return result;
+          }}
+          onUnadopt={async (entry, options) => {
+            const result = await api.unadoptLocalSkills(
+              projectId,
+              [entry],
+              options.delete_files
+            );
+            await loadLocalSkills();
+            if (result.failed.length > 0) {
+              toast.error(
+                `Unadopt ${entry.type}/${entry.name} failed`,
+                result.failed[0]?.message ?? undefined
+              );
+            } else if (result.files_deleted.length > 0) {
+              toast.ok(
+                `Unadopted ${entry.name} and deleted file on disk`
+              );
+            } else {
+              toast.ok(`Unadopted ${entry.name}`);
+            }
+            return result;
+          }}
+          onRescan={async () => {
+            try {
+              await api.rescanLocalSkills(projectId);
+              await loadLocalSkills();
+              toast.ok("Rescan complete");
+            } catch (err) {
+              toast.error(
+                "Rescan failed",
+                err instanceof Error ? err.message : String(err)
+              );
+            }
           }}
         />
       </TabPanel>

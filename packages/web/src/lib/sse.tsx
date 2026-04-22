@@ -73,7 +73,9 @@ export function SseProvider({ children }: PropsWithChildren): React.JSX.Element 
       "harness.changed",
       // v0.5 bootstrap (see spec §A7)
       "subscriptions.bootstrap_needs_resolution",
-      "subscriptions.bootstrap_resolved"
+      "subscriptions.bootstrap_resolved",
+      // v0.7 local skills (see spec §A8)
+      "local_skills.changed"
     ];
     for (const name of namedEvents) {
       source.addEventListener(name, listener);

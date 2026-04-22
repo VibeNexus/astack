@@ -336,7 +336,7 @@ describe("SubscriptionsPanel — v0.5 integration", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows the unmatched empty state when subs=0 and unmatched>0", () => {
+  it("shows the v0.7 unmatched banner when unmatched>0 (regardless of subs count)", () => {
     mount({
       bootstrap: {
         ...emptyBootstrap(),
@@ -346,8 +346,13 @@ describe("SubscriptionsPanel — v0.5 integration", () => {
         ]
       }
     });
+    // v0.7 (spec §1.18): copy routes the user to the Local Skills tab
+    // rather than the old "Browse repos" nudge.
     expect(
-      screen.getByText(/2 local skills found but not in any registered repo/i)
+      screen.getByText(/2 local skills not subscribed/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Local Skills tab/i })
     ).toBeInTheDocument();
   });
 

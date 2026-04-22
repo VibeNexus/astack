@@ -148,15 +148,10 @@ export function SubscriptionsPanel({
         />
       )}
 
+      {unmatched.length > 0 && <UnmatchedBanner count={unmatched.length} />}
+
       {subscriptions.length === 0 ? (
-        unmatched.length > 0 ? (
-          <UnmatchedEmptyState
-            count={unmatched.length}
-            onBrowse={onBrowse}
-          />
-        ) : (
-          <EmptyState onBrowse={onBrowse} />
-        )
+        <EmptyState onBrowse={onBrowse} />
       ) : (
         <SubscriptionGroups
           subscriptions={subscriptions}
@@ -174,6 +169,48 @@ export function SubscriptionsPanel({
         />
       )}
     </section>
+  );
+}
+
+/**
+ * v0.7: always-visible banner nudging users to the Local Skills tab when
+ * any `unmatched` entries exist. Replaces the v0.5 `UnmatchedEmptyState`
+ * (which only showed on zero subscriptions). Per spec §1.18 / §A4 the
+ * copy routes the user to the Local Skills tab rather than Browse Repos
+ * — unmatched entries are now a LocalSkill concern, not a "register a
+ * repo" nudge.
+ *
+ * The link is a plain `<a href="?tab=local-skills">` so it works with
+ * react-router's URL-search-param tab wiring without importing the
+ * router hook here (Panel stays dep-light).
+ */
+function UnmatchedBanner({
+  count
+}: {
+  count: number;
+}): React.JSX.Element {
+  return (
+    <div
+      role="note"
+      aria-label="Unmatched local skills"
+      className="flex items-center justify-between gap-3 rounded-md border border-line-subtle bg-surface-1 px-4 py-3"
+    >
+      <div className="text-sm text-fg-primary">
+        <span className="font-medium">
+          {count} local skill{count === 1 ? "" : "s"} not subscribed
+        </span>
+        <span className="text-fg-secondary">
+          {" "}— manage them in the{" "}
+          <a
+            href="?tab=local-skills"
+            className="underline text-accent hover:text-accent-hover"
+          >
+            Local Skills tab
+          </a>
+          .
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -212,44 +249,6 @@ function EmptyState({ onBrowse }: { onBrowse: () => void }): React.JSX.Element {
   );
 }
 
-/**
- * v0.5 empty-state variant: the user has local .claude/ content that
- * doesn't correspond to any registered repo. Nudge them to register
- * the repo rather than presenting the empty "first-run" illusion.
- */
-function UnmatchedEmptyState({
-  count,
-  onBrowse
-}: {
-  count: number;
-  onBrowse: () => void;
-}): React.JSX.Element {
-  return (
-    <div className="flex flex-col items-start gap-4 py-8 px-6 border border-dashed border-line-subtle rounded-lg">
-      <div>
-        <div className="text-base font-semibold text-fg-primary">
-          {count} local skill{count === 1 ? "" : "s"} found but not in any
-          registered repo
-        </div>
-        <div className="text-sm text-fg-secondary mt-1 max-w-md">
-          These live under <code className="font-mono">.claude/</code> in your
-          project but aren&apos;t published to any repo astack knows about.
-          Register the repo they came from to take them over, or keep them as
-          purely local skills.
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBrowse}
-          className="h-8 px-3 text-sm inline-flex items-center gap-1.5 rounded-md bg-accent text-accent-fg hover:bg-accent-hover focus-visible:ring-2 focus-visible:ring-accent/60 transition-colors duration-fast"
-        >
-          Browse repos
-        </button>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Subscriptions table, grouped by `skill.type` so commands, skills, and

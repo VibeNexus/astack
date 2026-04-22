@@ -12,11 +12,13 @@
 import {
   AstackError,
   ErrorCode,
+  type ApplyLocalSkillsResult,
   type ApplyResolutionsResult,
   type AstackErrorBody,
   type BatchResolveRequest,
   type BatchResolveResponse,
   type BootstrapResolution,
+  type BootstrapUnmatched,
   type CreateLinkedDirRequest,
   type CreateLinkedDirResponse,
   type DeleteProjectResponse,
@@ -29,6 +31,7 @@ import {
   type ListSyncLogsQuery,
   type ListSyncLogsResponse,
   type FsListResponse,
+  type LocalSkill,
   type ProjectBootstrapResult,
   type ProjectHarnessState,
   type PushResponse,
@@ -44,6 +47,7 @@ import {
   type SubscribeRequest,
   type SubscribeResponse,
   type SyncResponse,
+  type UnadoptLocalSkillsResult,
   type UnsubscribeResponse
 } from "@astack/shared";
 
@@ -248,7 +252,46 @@ export const api = {
     projectId: number,
     entries: Array<{ type: SkillType; name: string }>
   ): Promise<ApplyResolutionsResult> =>
-    request("POST", `/api/projects/${projectId}/bootstrap/ignore`, { entries })
+    request("POST", `/api/projects/${projectId}/bootstrap/ignore`, { entries }),
+
+  // Local Skills (v0.7 — legacy project .claude/ assets as first-class citizens)
+  listLocalSkills: (
+    projectId: number
+  ): Promise<{ items: LocalSkill[] }> =>
+    request("GET", `/api/projects/${projectId}/local-skills`),
+  listLocalSkillSuggestions: (
+    projectId: number
+  ): Promise<{ suggestions: BootstrapUnmatched[] }> =>
+    request("GET", `/api/projects/${projectId}/local-skills/suggestions`),
+  adoptLocalSkills: (
+    projectId: number,
+    entries: Array<{ type: SkillType; name: string }>
+  ): Promise<ApplyLocalSkillsResult> =>
+    request("POST", `/api/projects/${projectId}/local-skills/adopt`, {
+      entries
+    }),
+  unadoptLocalSkills: (
+    projectId: number,
+    entries: Array<{ type: SkillType; name: string }>,
+    deleteFiles = false
+  ): Promise<UnadoptLocalSkillsResult> =>
+    request("POST", `/api/projects/${projectId}/local-skills/unadopt`, {
+      entries,
+      delete_files: deleteFiles
+    }),
+  rescanLocalSkills: (
+    projectId: number
+  ): Promise<{ items: LocalSkill[] }> =>
+    // Rescan walks fs + recomputes hashDir for every row — can be a few
+    // seconds on 50+ skill projects, bump the timeout so the button's
+    // pending state is honest (default request timeout would falsely
+    // surface SERVER_UNREACHABLE).
+    request(
+      "POST",
+      `/api/projects/${projectId}/local-skills/rescan`,
+      {},
+      3 * 60_000
+    )
 };
 
 export { AstackError, ErrorCode };
