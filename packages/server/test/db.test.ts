@@ -38,7 +38,8 @@ describe("openDatabase", () => {
         "skills",
         "subscriptions",
         "sync_logs",
-        "linked_dirs"
+        "linked_dirs",
+        "local_skills"
       ])
     );
     db.close();
@@ -173,6 +174,138 @@ describe("openDatabase", () => {
     expect(() =>
       openDatabase({ path: ":memory:", migrate: true })
     ).not.toThrow();
+    db.close();
+  });
+
+  // ------------------------------------------------------------
+  // local_skills — v0.7
+  // ------------------------------------------------------------
+
+  it("creates local_skills table with the expected columns (v0.7)", () => {
+    const db = openDatabase({ path: ":memory:" });
+    const cols = db
+      .prepare<[], { name: string }>(
+        `SELECT name FROM pragma_table_info('local_skills') ORDER BY cid`
+      )
+      .all()
+      .map((r) => r.name);
+    expect(cols).toEqual([
+      "id",
+      "project_id",
+      "type",
+      "name",
+      "rel_path",
+      "description",
+      "origin",
+      "status",
+      "content_hash",
+      "adopted_at",
+      "last_seen_at"
+    ]);
+    db.close();
+  });
+
+  it("local_skills schema re-apply is idempotent", () => {
+    // Insert a row on the first DDL pass, re-run SCHEMA_DDL via a second
+    // openDatabase, and confirm the table (and data) survive untouched.
+    const db = openDatabase({ path: "file::memory:?cache=shared", migrate: true });
+    db.prepare(`INSERT INTO projects (name, path) VALUES ('p', '/tmp/p1')`).run();
+    db.prepare(
+      `INSERT INTO local_skills
+         (id, project_id, type, name, rel_path, origin, status,
+          adopted_at, last_seen_at)
+       VALUES
+         ('uuid-1', 1, 'command', 'dev', 'commands/dev.md',
+          'adopted', 'present', '2026-04-22T00:00:00Z', '2026-04-22T00:00:00Z')`
+    ).run();
+
+    // Re-run DDL; CREATE TABLE IF NOT EXISTS must be a no-op.
+    expect(() =>
+      openDatabase({ path: "file::memory:?cache=shared", migrate: true })
+    ).not.toThrow();
+
+    const row = db
+      .prepare<[], { name: string }>(
+        `SELECT name FROM local_skills WHERE id = 'uuid-1'`
+      )
+      .get();
+    expect(row?.name).toBe("dev");
+    db.close();
+  });
+
+  it("local_skills enforces CHECK on origin / status / type", () => {
+    const db = openDatabase({ path: ":memory:" });
+    db.prepare(`INSERT INTO projects (name, path) VALUES ('p', '/tmp/p2')`).run();
+
+    // Unknown origin rejected.
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO local_skills
+             (id, project_id, type, name, rel_path, origin, status,
+              adopted_at, last_seen_at)
+           VALUES
+             ('u-bad-origin', 1, 'command', 'x', 'commands/x.md',
+              'wrong', 'present', '2026-04-22T00:00:00Z', '2026-04-22T00:00:00Z')`
+        )
+        .run()
+    ).toThrow(/CHECK constraint/);
+
+    // Unknown status rejected.
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO local_skills
+             (id, project_id, type, name, rel_path, origin, status,
+              adopted_at, last_seen_at)
+           VALUES
+             ('u-bad-status', 1, 'command', 'x', 'commands/x.md',
+              'adopted', 'stale', '2026-04-22T00:00:00Z', '2026-04-22T00:00:00Z')`
+        )
+        .run()
+    ).toThrow(/CHECK constraint/);
+
+    // Unknown type rejected.
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO local_skills
+             (id, project_id, type, name, rel_path, origin, status,
+              adopted_at, last_seen_at)
+           VALUES
+             ('u-bad-type', 1, 'hook', 'x', 'hooks/x.md',
+              'adopted', 'present', '2026-04-22T00:00:00Z', '2026-04-22T00:00:00Z')`
+        )
+        .run()
+    ).toThrow(/CHECK constraint/);
+
+    db.close();
+  });
+
+  it("local_skills UNIQUE(project_id, type, name) and CASCADE on project delete", () => {
+    const db = openDatabase({ path: ":memory:" });
+    db.prepare(`INSERT INTO projects (name, path) VALUES ('p', '/tmp/p3')`).run();
+    const ins = db.prepare(
+      `INSERT INTO local_skills
+         (id, project_id, type, name, rel_path, origin, status,
+          adopted_at, last_seen_at)
+       VALUES
+         (?, 1, 'command', 'dev', 'commands/dev.md',
+          'adopted', 'present', '2026-04-22T00:00:00Z', '2026-04-22T00:00:00Z')`
+    );
+    ins.run("uuid-a");
+
+    // Same (project_id, type, name) rejected.
+    expect(() => ins.run("uuid-b")).toThrow(/UNIQUE/i);
+
+    // Cascade on project delete.
+    db.prepare(`DELETE FROM projects WHERE id = 1`).run();
+    const count = (
+      db
+        .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM local_skills`)
+        .get() ?? { c: 0 }
+    ).c;
+    expect(count).toBe(0);
     db.close();
   });
 });

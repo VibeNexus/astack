@@ -73,6 +73,16 @@ export const ErrorCode = {
    */
   SUBSCRIPTION_NAME_COLLISION: "SUBSCRIPTION_NAME_COLLISION",
 
+  // ---- local skills (v0.7) ----
+  /** Adopt requested but the (type, name) has no file/dir on disk. */
+  LOCAL_SKILL_NOT_ON_DISK: "LOCAL_SKILL_NOT_ON_DISK",
+  /** Unadopt / rescan requested a (type, name) that is not in local_skills. */
+  LOCAL_SKILL_NOT_FOUND: "LOCAL_SKILL_NOT_FOUND",
+  /** delete_files=true requested but filesystem removal failed (EACCES, EBUSY, ...). */
+  LOCAL_SKILL_DELETE_FAILED: "LOCAL_SKILL_DELETE_FAILED",
+  /** Adopt input (type, name) maps to an on-disk entry of a different type. */
+  LOCAL_SKILL_TYPE_MISMATCH: "LOCAL_SKILL_TYPE_MISMATCH",
+
   // ---- sync / push / resolve ----
   /** Working copy and upstream diverged; resolve required before push. */
   CONFLICT_DETECTED: "CONFLICT_DETECTED",
@@ -167,6 +177,11 @@ export const ErrorHttpStatus: Record<ErrorCode, number> = {
 
   SUBSCRIPTION_NOT_FOUND: 404,
   SUBSCRIPTION_NAME_COLLISION: 409,
+
+  LOCAL_SKILL_NOT_ON_DISK: 410,
+  LOCAL_SKILL_NOT_FOUND: 404,
+  LOCAL_SKILL_DELETE_FAILED: 500,
+  LOCAL_SKILL_TYPE_MISMATCH: 409,
 
   CONFLICT_DETECTED: 409,
   NO_ACTIVE_CONFLICT: 409,

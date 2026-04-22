@@ -23,6 +23,9 @@
  *   linked_dirs       [SOURCE]  — filesystem is source but we cache "last known"
  *   seed_decisions   [SOURCE]  — user decisions about builtin seed repos
  *                                (added in v0.2 — respected by SeedService)
+ *   local_skills     [SOURCE]  — project-local skills tracked without a
+ *                                git repo upstream; per-machine, does NOT
+ *                                mirror .astack.json (added in v0.7)
  */
 
 export const SCHEMA_DDL = `
@@ -141,4 +144,32 @@ CREATE TABLE IF NOT EXISTS seed_decisions (
   decision   TEXT NOT NULL CHECK (decision IN ('removed')),
   decided_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- ============================================================
+-- [SOURCE] local_skills — project-local skills (v0.7)
+-- Per-machine metadata index of .claude/** entries the user has adopted
+-- (or that bootstrap auto-adopted). Does NOT mirror .astack.json — local
+-- skills are not published, they are just tracked. See
+-- docs/version/v0.7-local-skills.md §A1 / §A3.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS local_skills (
+  id            TEXT PRIMARY KEY,                        -- uuid v4
+  project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type          TEXT NOT NULL CHECK (type IN ('command', 'skill', 'agent')),
+  name          TEXT NOT NULL,
+  /* POSIX path relative to the primary_tool dir, e.g. 'commands/dev.md'. */
+  rel_path      TEXT NOT NULL,
+  description   TEXT,
+  origin        TEXT NOT NULL CHECK (origin IN ('adopted', 'auto')),
+  status        TEXT NOT NULL
+                CHECK (status IN ('present', 'missing', 'modified', 'name_collision')),
+  /* sha256 hash of file (hashFile) or dir snapshot (hashDir). Nullable
+     because a freshly-inserted row may briefly lack a hash. */
+  content_hash  TEXT,
+  adopted_at    TEXT NOT NULL,
+  last_seen_at  TEXT NOT NULL,
+  UNIQUE (project_id, type, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_local_skills_project ON local_skills(project_id);
 `;

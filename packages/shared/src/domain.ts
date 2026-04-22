@@ -611,3 +611,95 @@ export interface ApplyResolutionsResult {
    */
   remaining_ambiguous: BootstrapAmbiguous[];
 }
+
+// ============================================================
+// Local skills (v0.7) — see docs/version/v0.7-local-skills.md
+// ============================================================
+
+/**
+ * Provenance of a LocalSkill row:
+ *   - "adopted" — the user explicitly adopted the entry via UI/CLI.
+ *   - "auto"    — bootstrap auto-adopted an unmatched entry that
+ *                 passed the auto-adopt heuristic (see spec §A2).
+ */
+export type LocalSkillOrigin = "adopted" | "auto";
+
+/**
+ * On-disk state of a LocalSkill, evaluated against the local filesystem.
+ *   - "present"         — file/dir exists and its content hash matches.
+ *   - "modified"        — file/dir exists but hash differs from the last
+ *                         recorded hash. Informational only; astack does
+ *                         not auto-revert.
+ *   - "missing"         — tracked in DB but not found on disk.
+ *   - "name_collision"  — another subscription (or skill repo) owns the
+ *                         same (type, name). See spec §A6.
+ */
+export type LocalSkillStatus =
+  | "present"
+  | "missing"
+  | "modified"
+  | "name_collision";
+
+/**
+ * A project-local skill tracked by astack without any upstream repo.
+ *
+ * LocalSkill is an independent domain (see spec §A1): it does NOT reuse
+ * the `skills` / `subscriptions` tables. `.astack.json` is NOT updated on
+ * adopt/unadopt — local skills are per-machine metadata (see spec §A3).
+ */
+export interface LocalSkill {
+  /** UUID v4; unique within the daemon (TEXT primary key in SQLite). */
+  id: string;
+  project_id: Id;
+  type: SkillType;
+  name: string;
+  /** POSIX path relative to `<primary_tool>/`, e.g. `commands/dev.md`. */
+  rel_path: string;
+  /** Optional description parsed from SKILL.md frontmatter. */
+  description: string | null;
+  origin: LocalSkillOrigin;
+  status: LocalSkillStatus;
+  /** sha256 hash of the file or dir snapshot; null only for transient rows. */
+  content_hash: string | null;
+  adopted_at: IsoDateTime;
+  last_seen_at: IsoDateTime;
+}
+
+/**
+ * Adopt / rescan result — see spec §4.
+ *
+ * `failed[]` reuses the v0.5 `BootstrapFailedEntry` shape (`code` +
+ * `message`) for consistency with `ApplyResolutionsResult`; this is an
+ * adaptation of Spec §A9's narrative (which used `error_code` /
+ * `error_detail`) to the existing codebase convention.
+ */
+export interface ApplyLocalSkillsResult {
+  succeeded: LocalSkill[];
+  failed: BootstrapFailedEntry[];
+}
+
+/** Unadopt response — see spec §4. */
+export interface UnadoptLocalSkillsResult {
+  /** (type, name) pairs that were successfully removed from DB. */
+  unadopted: Array<{ type: SkillType; name: string }>;
+  /**
+   * Relative paths (POSIX, under `<primary_tool>/`) whose on-disk files
+   * were deleted. Empty when `delete_files` was not requested.
+   */
+  files_deleted: string[];
+  failed: BootstrapFailedEntry[];
+}
+
+/**
+ * Payload carried on the `local_skills.changed` SSE event — see spec §A8.
+ *
+ * The event is coarse-grained: frontend receives it and re-fetches
+ * `GET /api/projects/:id/local-skills`. `summary` is advisory only and
+ * drives toast / banner copy (e.g. "Rescan: 3 modified").
+ */
+export interface LocalSkillsChangedSummary {
+  added: number;
+  removed: number;
+  modified: number;
+  missing: number;
+}
