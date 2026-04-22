@@ -425,6 +425,22 @@ export class RepoService {
    * Scan the local clone and reconcile `skills` table rows for this repo.
    * Returns the current skill rows.
    *
+   * Performance: large open-source repos (e.g. `everything-claude-code`
+   * has ~320 skills/agents) would otherwise trigger ~320 independent
+   * INSERT ... RETURNING statements, each an implicit transaction that
+   * fsyncs the WAL. Pre-v0.6 this blocked the daemon's event loop for
+   * hundreds of ms → seconds during first-start seeding, which the
+   * dashboard perceived as "server hung" (all `/api/repos/*` calls sat
+   * in the accept queue). We now:
+   *
+   *   1. Wrap the upsert loop + `deleteMissing` in a single
+   *      `BEGIN IMMEDIATE … COMMIT` so only one fsync pays the cost.
+   *   2. Cache prepared statements so SQLite doesn't re-parse SQL 320×.
+   *
+   * The transaction is still fully synchronous (node:sqlite is a sync
+   * API); callers that want event-loop breathing room must yield
+   * *between* scanAndUpsert calls, not inside.
+   *
    * @param scanConfig  Layout override. null = use `DEFAULT_SCAN_CONFIG`.
    */
   private scanAndUpsert(
@@ -436,32 +452,63 @@ export class RepoService {
   ): Skill[] {
     const config = scanConfig ?? DEFAULT_SCAN_CONFIG;
     const systemSkillIds = this.deps.systemSkillIds?.() ?? undefined;
+    const scanStart = Date.now();
     const { skills, warnings } = scanRepo(localPath, config, { systemSkillIds });
+    const scanMs = Date.now() - scanStart;
 
     for (const w of warnings) {
       this.deps.logger.warn("scan.warning", { repo_id: repoId, detail: w });
     }
 
+    const upsertStart = Date.now();
     const upserted: Skill[] = [];
-    for (const s of skills) {
-      upserted.push(
-        this.skills.upsert({
-          repo_id: repoId,
-          type: s.type,
-          name: s.name,
-          path: s.relPath,
-          description: s.description,
-          version: headHash,
-          updated_at: headTime
-        })
-      );
-    }
 
-    // Remove rows for skills that disappeared since last scan.
-    this.skills.deleteMissing(
-      repoId,
-      skills.map((s) => ({ type: s.type, name: s.name }))
-    );
+    // Single transaction: one WAL fsync instead of `skills.length` of them.
+    // We use IMMEDIATE so the write lock is acquired up-front; it's a no-op
+    // for the single-writer daemon but makes intent explicit.
+    this.deps.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const s of skills) {
+        upserted.push(
+          this.skills.upsert({
+            repo_id: repoId,
+            type: s.type,
+            name: s.name,
+            path: s.relPath,
+            description: s.description,
+            version: headHash,
+            updated_at: headTime
+          })
+        );
+      }
+
+      // Remove rows for skills that disappeared since last scan — also
+      // inside the transaction so a crash mid-way can't leave us with a
+      // half-upserted / half-deleted state.
+      this.skills.deleteMissing(
+        repoId,
+        skills.map((s) => ({ type: s.type, name: s.name }))
+      );
+
+      this.deps.db.exec("COMMIT");
+    } catch (err) {
+      // Best-effort rollback; don't mask the original error.
+      try {
+        this.deps.db.exec("ROLLBACK");
+      } catch {
+        /* already rolled back by SQLite, or connection dead */
+      }
+      throw err;
+    }
+    const upsertMs = Date.now() - upsertStart;
+
+    this.deps.logger.info("repo.scan_upsert", {
+      repo_id: repoId,
+      skill_count: upserted.length,
+      warnings: warnings.length,
+      scan_ms: scanMs,
+      upsert_ms: upsertMs
+    });
 
     return upserted;
   }

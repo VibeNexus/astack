@@ -60,18 +60,56 @@ export function ReposPage(): React.JSX.Element {
   const showDialog = params.get("action") === "new";
   const toast = useToast();
 
-  const load = useCallback(async () => {
-    try {
-      const { repos: list } = await api.listRepos({ limit: 200 });
-      setRepos(list);
-    } catch (err) {
-      toast.error(
-        "Could not load repos",
-        err instanceof AstackError ? err.message : String(err)
-      );
-      setRepos([]);
-    }
-  }, [toast]);
+  const load = useCallback(
+    async (opts: { retry?: boolean } = {}): Promise<void> => {
+      try {
+        const { repos: list } = await api.listRepos({ limit: 200 });
+        setRepos(list);
+      } catch (err) {
+        // During first-boot seed the daemon can momentarily block the
+        // event loop (see v0.6+ seed refactor); rather than latch the
+        // page into the empty state the first time a fetch times out,
+        // keep the skeleton visible and schedule a retry. The next
+        // SSE `seed.completed` / `repo.registered` event will also
+        // trigger a reload through the listeners below, so this is
+        // belt-and-suspenders.
+        if (opts.retry !== false) {
+          // Three retries with exponential backoff: 400ms, 1.2s, 3.6s.
+          // By ~5s total the first seed's scanAndUpsert has always
+          // finished; if the daemon is genuinely offline past that, we
+          // surface the empty-state toast and stop retrying.
+          let attempt = 0;
+          const max = 3;
+          const retry = async (): Promise<void> => {
+            attempt++;
+            try {
+              const { repos: list } = await api.listRepos({ limit: 200 });
+              setRepos(list);
+            } catch (err2) {
+              if (attempt < max) {
+                const delay = 400 * Math.pow(3, attempt - 1);
+                setTimeout(() => void retry(), delay);
+                return;
+              }
+              toast.error(
+                "Could not load repos",
+                err2 instanceof AstackError ? err2.message : String(err2)
+              );
+              setRepos([]);
+            }
+          };
+          setTimeout(() => void retry(), 400);
+          return;
+        }
+        toast.error(
+          "Could not load repos",
+          err instanceof AstackError ? err.message : String(err)
+        );
+        setRepos([]);
+      }
+    },
+    [toast]
+  );
 
   useEffect(() => {
     void load();
@@ -117,6 +155,12 @@ export function ReposPage(): React.JSX.Element {
   );
 
   useEventListener("repo.registered", () => void load());
+  useEventListener("seed.completed", () => {
+    // Seed is the one moment where the daemon's startup scan has just
+    // finished synchronously flushing writes; reload unconditionally so
+    // the Repos page never sits in skeleton state past this point.
+    void load({ retry: false });
+  });
   useEventListener("repo.refreshed", (e) => {
     void load();
     void fetchSkills(e.payload.repo.id);

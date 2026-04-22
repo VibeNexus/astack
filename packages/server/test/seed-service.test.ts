@@ -287,20 +287,38 @@ describe("SeedService", () => {
     expect(names).not.toContain("seed-a");
   });
 
-  it("clones the three seeds concurrently, not serially", async () => {
-    // Each clone takes 50ms; serial would be ~150ms, parallel ~50ms.
-    // Assert the total window is closer to 50 than 150.
+  it("runs seeds serially but keeps the event loop responsive between them", async () => {
+    // v0.6+: seeds run one at a time (not Promise.allSettled) so the
+    // synchronous scanAndUpsert tails don't line up in a single
+    // multi-second burst. Each clone takes 50ms, so total wall-clock
+    // time is ~3×50 = 150ms+ (serial). What we DO guarantee is that a
+    // setImmediate callback scheduled concurrently with the seed run
+    // gets to run BEFORE all three seeds finish — i.e. the event loop
+    // is not monopolised.
     const git = makeMockGit({ cloneDelayMs: 50 });
     const { seedService } = build(git);
 
-    const t0 = Date.now();
-    const summary = await seedService.seedBuiltinRepos();
-    const elapsed = Date.now() - t0;
+    let interleaveTicks = 0;
+    const ticker = setInterval(() => {
+      interleaveTicks++;
+    }, 10);
+    try {
+      const t0 = Date.now();
+      const summary = await seedService.seedBuiltinRepos();
+      const elapsed = Date.now() - t0;
 
-    expect(summary.succeeded).toBe(3);
-    // Parallel should finish well under 120ms (50ms + overhead).
-    // Serial would take 150+ms.
-    expect(elapsed).toBeLessThan(130);
+      expect(summary.succeeded).toBe(3);
+      // Serial ≥ 3*50ms; upper bound generous to avoid flakes on CI.
+      expect(elapsed).toBeGreaterThanOrEqual(140);
+      expect(elapsed).toBeLessThan(800);
+      // The interval fires every 10ms; over ~150ms we must have seen at
+      // least a handful of ticks. Zero would mean the event loop was
+      // starved. Pre-v0.6 parallel-then-sync path could go ticks=0 on
+      // slow hardware.
+      expect(interleaveTicks).toBeGreaterThanOrEqual(3);
+    } finally {
+      clearInterval(ticker);
+    }
   });
 
   it("emits SeedCompleted even when everything fails", async () => {

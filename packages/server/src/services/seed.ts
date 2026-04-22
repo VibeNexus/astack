@@ -74,45 +74,77 @@ export class SeedService {
 
   /**
    * Walk all builtin seeds and ensure each one ends up registered, or
-   * the reason it wasn't is captured. Emits a single `SeedCompleted`
+   * the reason it wasn't is captured. Emits a single SeedCompleted
    * event at the end.
    *
-   * Parallel: three repos clone concurrently via `Promise.allSettled`.
+   * Serial (not parallel): every seed's register(...) ends in a
+   * synchronous scanAndUpsert (node:sqlite writes + fs scans are both
+   * sync) that blocks the event loop for a noticeable chunk of time on
+   * large repos — everything-claude-code has ~320 skills/agents. When
+   * we ran all three concurrently the three synchronous tails landed in
+   * the same macro-task burst and the daemon appeared frozen for several
+   * seconds; the dashboard's first-load /api/repos/:id/skills fetches
+   * stacked up behind that burst and browsers showed "Provisional
+   * headers, pending" until the last seed drained.
+   *
+   * Running one at a time, with a setImmediate yield between seeds,
+   * lets HTTP requests interleave cleanly. Wall-clock time is ~unchanged
+   * (the clone step is the long tail and is already async-git) but p99
+   * event-loop lag drops from multi-second to <50ms.
    */
   async seedBuiltinRepos(): Promise<SeedSummary> {
-    const results = await Promise.allSettled(
-      this.seeds.map((seed) => this.seedOne(seed))
-    );
+    const started = Date.now();
+    this.deps.logger.info("seed.started", {
+      count: this.seeds.length,
+      seeds: this.seeds.map((s) => s.name)
+    });
 
     let succeeded = 0;
     let failed = 0;
     let skipped = 0;
     const failed_names: string[] = [];
 
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i]!;
-      const name = this.seeds[i]!.name;
-      if (r.status === "rejected") {
-        failed++;
-        failed_names.push(name);
-        this.deps.logger.error("seed.failed", {
-          seed: name,
-          error: r.reason instanceof Error ? r.reason.message : String(r.reason)
-        });
-        continue;
-      }
-      switch (r.value) {
-        case "installed":
+    for (let i = 0; i < this.seeds.length; i++) {
+      const seed = this.seeds[i]!;
+      const seedStart = Date.now();
+      try {
+        const outcome = await this.seedOne(seed);
+        if (outcome === "installed") {
           succeeded++;
-          break;
-        case "skipped":
+        } else {
           skipped++;
-          break;
+        }
+        this.deps.logger.info("seed.one_done", {
+          seed: seed.name,
+          outcome,
+          elapsed_ms: Date.now() - seedStart
+        });
+      } catch (err) {
+        failed++;
+        failed_names.push(seed.name);
+        this.deps.logger.error("seed.failed", {
+          seed: seed.name,
+          elapsed_ms: Date.now() - seedStart,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+
+      // Yield control back to the event loop between seeds. Without this
+      // three consecutive synchronous `scanAndUpsert` bursts can line up
+      // on the same macro-task and starve HTTP requests for the full
+      // duration. `setImmediate` runs after pending I/O callbacks, so any
+      // accepted sockets / queued fetches get a chance to make progress
+      // before the next clone+scan begins.
+      if (i < this.seeds.length - 1) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
       }
     }
 
     const summary: SeedSummary = { succeeded, failed, skipped, failed_names };
-    this.deps.logger.info("seed.completed", { ...summary });
+    this.deps.logger.info("seed.completed", {
+      ...summary,
+      elapsed_ms: Date.now() - started
+    });
     this.deps.events.emit({
       type: EventType.SeedCompleted,
       payload: summary
