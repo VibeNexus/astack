@@ -72,6 +72,14 @@ export function createApp(opts: CreateAppOptions): AppInstance {
   // introducing a circular DI. See v0.4 spec §A9.
   let systemSkillServiceRef: SystemSkillService | null = null;
 
+  // Forward-declare holder so ProjectBootstrapService can call into
+  // LocalSkillService for auto-adopt (v0.7 §3.1). Same late-bound
+  // pattern as systemSkillServiceRef: bootstrap needs to be constructed
+  // before LocalSkillService (LocalSkillService.suggestFromUnmatched
+  // depends on bootstrap.scan), but bootstrap needs a way to call
+  // LocalSkillService.autoAdoptFromUnmatched once both are wired.
+  let localSkillServiceRef: LocalSkillService | null = null;
+
   const repoService = new RepoService({
     db,
     config: opts.config,
@@ -134,7 +142,14 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     locks,
     projects: projectService,
     subscriptions: subscriptionService,
-    systemSkills: systemSkillService
+    systemSkills: systemSkillService,
+    // v0.7 PR4: late-bound so ProjectBootstrapService can call into
+    // LocalSkillService.autoAdoptFromUnmatched inside its own lock scope.
+    // The ref is assigned right after localSkillService is constructed
+    // below. Until then the getter returns null and bootstrap silently
+    // skips auto-adopt (preserves v0.5 / v0.6 behavior for any code path
+    // that constructs bootstrap without LocalSkillService, e.g. tests).
+    getLocalSkillService: () => localSkillServiceRef
   });
 
   // v0.7: LocalSkillService — depends on projects + subscriptions, and
@@ -152,6 +167,7 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     subscriptions: subscriptionService,
     getBootstrapService: () => projectBootstrapService
   });
+  localSkillServiceRef = localSkillService;
 
   // Gitignore guard: self-contained subscriber that auto-appends
   // `.astack/` + `.astack.json` to the project root `.gitignore` when a

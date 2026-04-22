@@ -56,6 +56,7 @@ import {
 } from "@astack/shared";
 
 import type { Db } from "../db/connection.js";
+import { LocalSkillRepository } from "../db/local-skills.js";
 import { RepoRepository } from "../db/repos.js";
 import { SkillRepository } from "../db/skills.js";
 import type { EventBus } from "../events.js";
@@ -71,6 +72,7 @@ import type { Logger } from "../logger.js";
 import { scanRepo } from "../scanner/index.js";
 import { safeLog } from "../system-skills/service.js";
 
+import type { LocalSkillService } from "./local-skill.js";
 import type { ProjectService } from "./project.js";
 import type { SubscriptionService } from "./subscription.js";
 import type { SystemSkillService } from "../system-skills/service.js";
@@ -85,6 +87,19 @@ export interface ProjectBootstrapServiceDeps {
   projects: ProjectService;
   subscriptions: SubscriptionService;
   systemSkills: SystemSkillService;
+  /**
+   * Late-bound LocalSkillService accessor (v0.7 PR4). Returns null before
+   * the service is wired (kept optional so v0.5 / v0.6 tests and code
+   * paths continue to work unchanged). Used inside `scanAndAutoSubscribe`
+   * to auto-adopt eligible `unmatched` entries as `origin='auto'`
+   * LocalSkills, and inside `scanRaw` to filter already-adopted entries
+   * from the three-way classification. See spec §3.1 / §A2.
+   *
+   * Mirrors the `systemSkillServiceRef` late-bound pattern used in
+   * `http/app.ts` to break the circular dependency between bootstrap and
+   * LocalSkill services.
+   */
+  getLocalSkillService?: () => LocalSkillService | null;
 }
 
 // ---------- Constants ----------
@@ -116,12 +131,14 @@ export const BOOTSTRAP_SCAN_CONFIG: ScanConfig = {
 export class ProjectBootstrapService {
   private readonly skills: SkillRepository;
   private readonly repos: RepoRepository;
+  private readonly localSkills: LocalSkillRepository;
   /** A8: dedupe concurrent scan / scanAndAutoSubscribe calls per project. */
   private readonly inflightScan = new Map<Id, Promise<ProjectBootstrapResult>>();
 
   constructor(private readonly deps: ProjectBootstrapServiceDeps) {
     this.skills = new SkillRepository(deps.db);
     this.repos = new RepoRepository(deps.db);
+    this.localSkills = new LocalSkillRepository(deps.db);
 
     // PR4 / spec §3.1: event-driven auto-bootstrap on project registration.
     // Mirrors SystemSkillService's subscriber pattern: fire-and-forget,
@@ -199,6 +216,43 @@ export class ProjectBootstrapService {
           projectId,
           result.matched
         );
+
+        // v0.7 §3.1: auto-adopt unmatched entries as LocalSkills (origin
+        // 'auto'). We call this INSIDE the bootstrap lock scope so DB
+        // writes from adopt can't interleave with subsequent
+        // bootstrap / sync writes. `autoAdoptFromUnmatched` is the
+        // lock-free variant — passing it a lock would deadlock on the
+        // same `projectBootstrapLockKey`.
+        //
+        // Wrapped in try/catch so a broken LocalSkillService wiring (e.g.
+        // the late-bound getter throwing) cannot kill bootstrap's
+        // primary contract of subscribeMatched + emit SSE. Per-entry
+        // failures are already swallowed into `result.failed[]` by
+        // LocalSkillService itself (R4).
+        try {
+          const localSkills = this.deps.getLocalSkillService?.() ?? null;
+          if (localSkills) {
+            const autoAdopted = localSkills.autoAdoptFromUnmatched(
+              projectId,
+              result.unmatched
+            );
+            if (autoAdopted.failed.length > 0) {
+              this.deps.logger.warn("bootstrap.auto_adopt_failed", {
+                project_id: projectId,
+                failed: autoAdopted.failed.map((f) => ({
+                  type: f.type,
+                  name: f.name,
+                  code: f.code
+                }))
+              });
+            }
+          }
+        } catch (err) {
+          safeLog(this.deps.logger, "bootstrap.auto_adopt_crash", {
+            project_id: projectId,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
 
         this.emitPostScanEvent({
           projectId,
@@ -317,6 +371,14 @@ export class ProjectBootstrapService {
       ).map((e) => `${e.type}/${e.name}`)
     );
     const subscribedKeys = this.collectSubscribedKeys(project.id);
+    // v0.7 §3.1 / §A2: entries already tracked as LocalSkill (adopted or
+    // auto-adopted) must not re-appear in any of matched/ambiguous/
+    // unmatched — the Local Skills tab owns their lifecycle.
+    const adoptedLocalKeys = new Set(
+      this.localSkills
+        .listByProject(project.id)
+        .map((r) => `${r.type}/${r.name}`)
+    );
 
     const matched: BootstrapMatch[] = [];
     const ambiguous: BootstrapAmbiguous[] = [];
@@ -326,6 +388,7 @@ export class ProjectBootstrapService {
       const key = `${local.type}/${local.name}`;
       if (ignored.has(key)) continue;
       if (subscribedKeys.has(key)) continue;
+      if (adoptedLocalKeys.has(key)) continue;
 
       const candidates = this.findCandidates(local.type, local.name);
 

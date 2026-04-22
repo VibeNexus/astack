@@ -32,6 +32,7 @@ import {
   writeManifest,
   type AstackManifest
 } from "../src/manifest.js";
+import { LocalSkillService } from "../src/services/local-skill.js";
 import { ProjectBootstrapService } from "../src/services/project-bootstrap.js";
 import { ProjectService } from "../src/services/project.js";
 import { SubscriptionService } from "../src/services/subscription.js";
@@ -46,6 +47,7 @@ interface Ctx {
   subs: SubscriptionService;
   systemSkills: SystemSkillService;
   bootstrap: ProjectBootstrapService;
+  localSkills: LocalSkillService;
   projectDir: tmp.DirectoryResult;
   projectId: number;
 }
@@ -72,6 +74,10 @@ async function makeCtx(
     logger: nullLogger(),
     projects
   });
+  // Mirror http/app.ts wiring: bootstrap constructed first with
+  // late-bound getLocalSkillService, LocalSkillService constructed
+  // second, then the ref is assigned so auto-adopt flows work in tests.
+  let localSkillsRef: LocalSkillService | null = null;
   const bootstrap = new ProjectBootstrapService({
     db,
     events,
@@ -79,8 +85,19 @@ async function makeCtx(
     locks,
     projects,
     subscriptions: subs,
-    systemSkills
+    systemSkills,
+    getLocalSkillService: () => localSkillsRef
   });
+  const localSkills = new LocalSkillService({
+    db,
+    events,
+    logger: nullLogger(),
+    locks,
+    projects,
+    subscriptions: subs,
+    getBootstrapService: () => bootstrap
+  });
+  localSkillsRef = localSkills;
 
   const projectDir = await tmp.dir({ unsafeCleanup: true });
   const primaryTool = overrides.primaryTool ?? ".claude";
@@ -106,6 +123,7 @@ async function makeCtx(
     subs,
     systemSkills,
     bootstrap,
+    localSkills,
     projectDir,
     projectId: project.id
   };
@@ -715,5 +733,159 @@ describe("ProjectBootstrapService — manifest path", () => {
     expect(fs.existsSync(manifestPath(ctx.projectDir.path, ".claude"))).toBe(
       true
     );
+  });
+});
+
+// ---------- v0.7 PR4 regression tests ----------
+
+describe("ProjectBootstrapService — v0.7 LocalSkill integration (PR4)", () => {
+  let ctx: Ctx;
+  afterEach(async () => {
+    if (ctx) await teardown(ctx);
+  });
+
+  it("PR4 test 1: scanRaw filters out entries that are already adopted as LocalSkills", async () => {
+    // Setup: a local command file with no repo match → would normally
+    // appear in `unmatched`. Adopt it manually first, then scan again
+    // and verify it disappears from all three buckets.
+    ctx = await makeCtx();
+    makeLocalCommandFile(ctx, "dev");
+
+    // Pre-adopt manually (origin='adopted').
+    const adoptResult = await ctx.localSkills.adopt(ctx.projectId, [
+      { type: SkillType.Command, name: "dev" }
+    ]);
+    expect(adoptResult.succeeded).toHaveLength(1);
+    expect(adoptResult.succeeded[0]!.origin).toBe("adopted");
+
+    // Now scan: the adopted entry must not re-appear anywhere.
+    const result = await ctx.bootstrap.scan(ctx.projectId);
+    expect(result.matched).toEqual([]);
+    expect(result.ambiguous).toEqual([]);
+    expect(result.unmatched).toEqual([]);
+  });
+
+  it("PR4 test 2: scanAndAutoSubscribe auto-adopts unmatched entries as origin='auto'", async () => {
+    // Legacy-project flow: the project has private commands/skills not
+    // tied to any registered repo. scanAndAutoSubscribe should
+    // auto-adopt them as LocalSkills with origin='auto'.
+    ctx = await makeCtx();
+    makeLocalCommandFile(ctx, "dev");
+    makeLocalCommandFile(ctx, "mr");
+    makeLocalSkillDir(ctx, "iwiki");
+
+    const r = await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    // The unmatched list was populated by scanRaw BEFORE auto-adopt; we
+    // just verify auto-adopt wrote LocalSkill rows for each.
+    expect(r.subscribed).toHaveLength(0);
+
+    const tracked = ctx.localSkills.list(ctx.projectId);
+    const byKey = new Map(tracked.map((t) => [`${t.type}/${t.name}`, t]));
+    expect(byKey.size).toBe(3);
+    expect(byKey.get("command/dev")?.origin).toBe("auto");
+    expect(byKey.get("command/mr")?.origin).toBe("auto");
+    expect(byKey.get("skill/iwiki")?.origin).toBe("auto");
+    // Status should be 'present' immediately after auto-adopt.
+    for (const t of tracked) {
+      expect(t.status).toBe("present");
+    }
+  });
+
+  it("PR4 test 3: auto-adopt on second scan is idempotent (already-adopted entries re-filtered out of unmatched)", async () => {
+    // Run scanAndAutoSubscribe twice. Second run must NOT re-adopt
+    // (adoptedLocalKeys filter prevents re-entry into unmatched) and
+    // must NOT churn last_seen_at in a way that breaks idempotency.
+    ctx = await makeCtx();
+    makeLocalCommandFile(ctx, "dev");
+
+    await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    const first = ctx.localSkills.list(ctx.projectId);
+    expect(first).toHaveLength(1);
+    const firstRow = first[0]!;
+
+    // Second call — scan sees 0 unmatched (filter kicks in), so
+    // autoAdoptFromUnmatched receives an empty list and no upsert runs.
+    await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    const second = ctx.localSkills.list(ctx.projectId);
+    expect(second).toHaveLength(1);
+    // Origin and id should be stable; last_seen_at only changes via
+    // rescan or a fresh adopt call.
+    expect(second[0]!.id).toBe(firstRow.id);
+    expect(second[0]!.origin).toBe("auto");
+    expect(second[0]!.last_seen_at).toBe(firstRow.last_seen_at);
+  });
+
+  it("PR4 test 4: scanAndAutoSubscribe still matches + subscribes legitimate repo matches alongside auto-adopting unmatched", async () => {
+    // Mixed scenario: one local command maps to a registered repo
+    // (matched → subscribe), two others don't (unmatched → auto-adopt).
+    ctx = await makeCtx();
+    insertRepoSkill(ctx, {
+      repoName: "repoA",
+      type: SkillType.Command,
+      name: "code_review"
+    });
+    makeLocalCommandFile(ctx, "code_review");
+    makeLocalCommandFile(ctx, "dev");
+    makeLocalCommandFile(ctx, "mr");
+
+    const r = await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    expect(r.subscribed).toHaveLength(1);
+    expect(r.subscribed[0]!.name).toBe("code_review");
+
+    const tracked = ctx.localSkills.list(ctx.projectId);
+    expect(tracked).toHaveLength(2);
+    const names = tracked.map((t) => t.name).sort();
+    expect(names).toEqual(["dev", "mr"]);
+    for (const t of tracked) expect(t.origin).toBe("auto");
+  });
+
+  it("PR4 test 5: bootstrap without LocalSkillService wired (getLocalSkillService returns null) still runs subscribe path safely", async () => {
+    // Construct a bootstrap service with NO getLocalSkillService —
+    // simulating the v0.5 / v0.6 code path where LocalSkill does not
+    // exist. Auto-adopt must silently skip without crashing.
+    ctx = await makeCtx();
+    const barebone = new ProjectBootstrapService({
+      db: ctx.db,
+      events: ctx.events,
+      logger: nullLogger(),
+      locks: ctx.locks,
+      projects: ctx.projects,
+      subscriptions: ctx.subs,
+      systemSkills: ctx.systemSkills
+      // Intentionally omit getLocalSkillService.
+    });
+    makeLocalCommandFile(ctx, "dev");
+
+    // Should not throw.
+    const r = await barebone.scanAndAutoSubscribe(ctx.projectId);
+    expect(r.subscribed).toHaveLength(0);
+    // And no LocalSkill rows should have been written via the barebone
+    // service (LocalSkillService isn't wired to it).
+    expect(ctx.localSkills.list(ctx.projectId)).toEqual([]);
+  });
+
+  it("PR4 test 6: bootstrap emits no event when matched=0 ambiguous=0 unmatched=3 (all auto-adopted)", async () => {
+    // Per emitPostScanEvent: no Resolved event when only unmatched
+    // existed pre-auto-adopt AND subscribeMatched was empty. Confirm
+    // v0.7 auto-adopt doesn't accidentally trigger a Resolved event.
+    ctx = await makeCtx();
+    makeLocalCommandFile(ctx, "dev");
+    makeLocalCommandFile(ctx, "mr");
+    makeLocalCommandFile(ctx, "spec");
+    ctx.emitted.length = 0;
+
+    await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    const bootstrapEvts = bootstrapEvents(ctx.emitted);
+    expect(bootstrapEvts).toHaveLength(0);
+
+    // But LocalSkillsChanged WAS emitted (by LocalSkillService's
+    // emitChanged inside autoAdoptFromUnmatched).
+    const localChanged = ctx.emitted
+      .map((e) => e.event)
+      .filter((e) => e.type === EventType.LocalSkillsChanged);
+    expect(localChanged).toHaveLength(1);
+    if (localChanged[0]!.type === EventType.LocalSkillsChanged) {
+      expect(localChanged[0]!.payload.summary.added).toBe(3);
+    }
   });
 });
