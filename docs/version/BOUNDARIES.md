@@ -3,6 +3,34 @@
 > 每个迭代的范围边界，防止跨迭代的范围蔓延。由 `/spec` 命令自动维护。
 > spec_review 评审时作为迭代边界遵守（A3）的评审基准。
 
+## v0.7 — Local Skills as First-Class Citizens
+
+**本迭代做：**
+- 新增 `LocalSkill` 领域概念 + 独立 `local_skills` SQLite 表（`origin: adopted | auto`、`status: present | missing | modified | name_collision`、`content_hash`），不进 `skills` / `subscriptions` / `system_skills` 任何既有表
+- `LocalSkillService`：`list / adopt / unadopt / rescan / suggestFromUnmatched` 五个方法；`unadopt` 默认不删 fs 文件，可选 `delete_files: true` 显式删除；`rescan` 只刷新已 adopted 条目的 hash/status，不导入新文件（A7）
+- 5 个 HTTP 端点：`GET /local-skills`（纯读）/ `POST /local-skills/adopt` / `unadopt` / `rescan` / `GET /local-skills/suggestions`；response shape 对齐 v0.5 `ApplyResolutionsResult`（`succeeded + failed[]` 带 error_code + message，遵 R7）
+- `ProjectBootstrapService.scanAndAutoSubscribe` 扩展 auto-adopt：扫描出 `unmatched` 中符合 heuristic（scanner 合法 + 不在 `ignored_local` + 无订阅）的条目自动 adopt 为 `origin: "auto"` LocalSkill；`scanRaw` 在三元分类前加过滤 "已 adopt LocalSkill"（与 `ignored_local` / 已订阅并列）
+- 1 个新 SSE 事件：`local_skills.changed`（coarse-grained，payload 含 `summary: { added, removed, modified, missing }`；不新增分项事件）
+- A9 跨服务锁扩展：LocalSkill 三条写路径（adopt / unadopt / rescan）复用 v0.5 `projectBootstrapLockKey(projectId)` 锁，与 ProjectBootstrapService / SyncService.syncProject 共用
+- A8 进程内锁：`inflightRescan: Map<projectId, Promise>` 防并发 rescan
+- 前端：新 `Local Skills` tab（位于 Subscriptions 之后）+ `LocalSkillsPanel` + `AdoptDrawer` + api 层 5 个方法 + `useQuery(['local-skills', projectId])`；`SubscriptionsPanel` 的 `UnmatchedEmptyState` 条件放宽为 `unmatched.length > 0`（原为 `subscriptions.length === 0 && unmatched.length > 0`），copy 改为 "N local skills not tracked → [Manage in Local Skills tab]"
+- E2E ≥ 3 scenario（legacy register 触发 auto-adopt / 手动 adopt+unadopt / rescan 发现 missing）
+
+**本迭代不做（延后到 v0.8+）：**
+- LocalSkill → git repo 的 "Promote to repo" 向导（跨迭代 UX，涉及 repo 创建流程）
+- LocalSkill 内容编辑器（Web 里改 `.claude/commands/dev.md`）—— 文件所有权原则，astack 只读+索引，编辑走 IDE
+- LocalSkill 的跨项目复制 / 借用（是 fs copy，不需 astack 介入）
+- LocalSkill 发分项 SSE 事件（adopted / unadopted / modified 分离）—— coarse `.changed` 足够
+- CLI `astack local adopt / unadopt / list` —— 本迭代只 Web，CLI 一致性 v0.8 补齐
+- 非 `.claude` primary_tool 的 LocalSkill 支持 —— 同 v0.4 / v0.5 保持 `.claude` only
+- LocalSkill 与 `ignored_local` 合并 —— 保持独立，`ignored_local` 专指 bootstrap ambiguous 不订阅
+- 把 LocalSkill 纳入 Sync 流程 / 头部 `1 skill · 0 tools` 计数（A10）
+- Team 协作 UI / 跨开发者 LocalSkill 同步（本质 per-machine；靠 git 的 `.claude/**` 文件 + auto-adopt heuristic 幂等性）
+- Daemon 启动时全项目 rescan
+- name_collision 的自动裁决按钮（仅标状态，让用户看到）
+- v0.5 `ignored_local` 字段迁移到 `local_skills` 表（两表语义不同：§A3）
+- `BOOTSTRAP_SCAN_CONFIG` 与 `DEFAULT_SCAN_CONFIG` 的全局合并（同 v0.5 Out of scope #8）
+
 ## v0.6 — Open-source 镜像卫生 + Resolve 路径自愈 + 日志落盘
 
 **本迭代做：**

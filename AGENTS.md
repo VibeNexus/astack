@@ -30,6 +30,8 @@
 
 ## 5. 当前活跃迭代
 
+**最新规划：** v0.7 — Local Skills as First-Class Citizens（2026-04-22，[spec](docs/version/v0.7-local-skills.md)）— Spec v1 draft，待评审
+
 **最近完成：** v0.6 — Open-source 镜像卫生 + Resolve 路径自愈 + 日志落盘（2026-04-22，[spec](docs/version/v0.6-mirror-hygiene.md)）— PR1–PR5 全部落地，R6/R7/P6/P7 已沉淀至 retro
 
 **主路径实施完成：** v0.5 — Subscription Bootstrap for Legacy Projects（2026-04-21，[spec](docs/version/v0.5-subscription-bootstrap.md)）— PR1–PR5 已落地，PR6 E2E 规划中

@@ -1,0 +1,346 @@
+# Iteration 0.7 — Local Skills as First-Class Citizens — Spec Review
+
+> 评审对象：`docs/version/v0.7-local-skills.md`（Spec v1, 498 行）
+> 评审时间：2026-04-22
+> 评审输入：活跃黄金法则 R1–R7、活跃反模式 P1–P7、AGENTS.md、INDEX.md、BOUNDARIES.md、相关源码
+> 结论先行：**条件性通过（需在进入 PR1 之前修复 2 处 P0 事实错误 + 3 处 P1 契约歧义）**
+
+---
+
+## 0. 评审过程摘要
+
+本次按 spec_review 四步流程执行：
+
+1. **结构完整性**：Spec 含迭代缘起 / 边界 / 架构决策 A1–A10 / 数据流 3.1–3.5 / 类型定义 / PR 拆分（6 个）/ 跨迭代影响 / 测试策略 / 风险兜底 —— 结构完整。
+2. **方案内部一致性**：同名同义一致、无致命漂移；仅 1 处小漂移（见 IC2）。
+3. **按 Phase 逐子任务深度评审**：PR1–PR6 逐一对照源码可达性，详见 §3。
+4. **输出评审报告**：即本文件，末尾附知识沉淀摘要。
+
+---
+
+## 1. 结构完整性
+
+| 必需章节 | 是否齐全 | 备注 |
+|---|---|---|
+| 迭代缘起 / 为什么现在能做 | ✅ | §0，结合 FinClaw 真实数据（14 条 local 只显示 1 条）建立了动机 |
+| 本次迭代边界（In/Out/Risks） | ✅ | §1，In scope 23 项 + Out of scope 11 项 + 已知情风险 7 项 |
+| 架构决策 A1–A10 | ✅ | 每条决策均含候选方案 + 拒绝理由 + 支撑 |
+| 数据流 | ✅ | 5 条路径（注册 auto-adopt / 手动 adopt / unadopt / rescan / list） |
+| 类型定义（权威） | ✅ | §4 明确标注 "本节为权威定义，后续只引用不重述（R2）" |
+| PR 拆分 | ✅ | 6 个 PR，附原子性理由 + 顺序强依赖说明 |
+| 跨迭代影响评估 | ✅ | §6 表格覆盖 7 个既有模块 |
+| 测试策略 | ✅ | §7 按维度列最少 case + PR 归属 |
+| 风险兜底 | ✅ | §8 表格含 5 项 |
+
+**结构评分：A（无缺章）**
+
+---
+
+## 2. 方案内部一致性（IC1–IC6）
+
+| 编号 | 项 | 结论 | 证据 |
+|---|---|---|---|
+| **IC1** | 同名同义：`LocalSkillOrigin` / `LocalSkillStatus` 在 §1 / §A1 / §A2 / §4 / §3.x 用法统一 | ✅ | 四处均为 `"adopted" / "auto"`、`"present" / "missing" / "modified" / "name_collision"` |
+| **IC2** | Response shape 单一来源（R2） | ⚠️ 轻微 | §4 权威定义 `ApplyLocalSkillsResult = { succeeded, failed }`，§1.5（第 71 行）文字表述为 `{ adopted, failed }`。§4 是权威，§1 需改用 `succeeded` 或改为"返回 `ApplyLocalSkillsResult`（§4）" |
+| **IC3** | 锁 key 在 A8 / §3.2–3.4 / PR 表一致 | ✅ | 全部指向 `projectBootstrapLockKey(projectId)`，复用 v0.5 |
+| **IC4** | 触发点矩阵（A2 表）与数据流 §3.1 / §3.2 一致 | ✅ | 写 DB / 发 SSE 列与数据流箭头一一对应 |
+| **IC5** | SSE 事件收敛承诺（A8）与 §1.12 "不新增分项事件" 一致 | ✅ | 一个 coarse-grained `.changed` 贯穿全 spec |
+| **IC6** | In-scope #2 "永远只是元数据索引，adopt 不拷贝不移动" 与所有数据流一致 | ✅ | §3.1–3.5 没有任何 fs copy / move 操作 |
+
+**一致性评分：B+（仅 IC2 的 `adopted/succeeded` 字段名需修正，属 Spec 文本漂移）**
+
+---
+
+## 3. 按 Phase 深度评审（PR1–PR6）
+
+### PR1 — Schema + migration + domain 类型
+
+**内容**：`local_skills` 表、`LocalSkill` 接口、枚举。
+
+**可行性（C 维度）问题：**
+
+- 🔴 **[C1 · 代码可达性 · P0]** Spec §1.3 和 §8 声称"独立迁移文件 `0007_local_skills.ts`（沿用 v0.2 的 migration 模式）" + "migration 幂等 + 单测强制 up/down 回归" + §7 表格"Migration 正向/幂等 3 case" + §5 PR1 原子性理由"migration 单测覆盖"。**此机制在项目中不存在：**
+  - `packages/server/src/db/connection.ts:17-19` 注释明言："Schema evolution: single `SCHEMA_DDL` constant in schema.ts. **No version table, no migration machinery** (pre-1.0, single user)."
+  - `packages/server/src/db/schema.ts:6` 注释同款："there is no version table and no migration machinery"
+  - `openDatabase` 只做 `db.exec(SCHEMA_DDL)`，整个 DDL 用 `CREATE TABLE IF NOT EXISTS` 实现幂等
+  - `packages/server/src/db/` 目录下无任何 `0001_*.ts` ~ `0006_*.ts`，全仓代码侧 `grep -r "0007"` 0 命中（只在本 spec 中出现）
+  - "up/down 回归" 在单一 DDL 常量方案下**无 down 语义可测**
+  
+  **影响**：研发按 spec 实施时会卡在"找不到 v0.2 migration 模式"，要么被迫临时发明 migration 框架（越界 PR1 范围），要么砍掉该测试项（测试策略与 spec 打架）。触发 **P1（幻象复用）+ P3（schema 漂移联想）**，违反 **R1（复用声明必须 grep 验证）**。
+
+- 🟡 **[C3 · 命名与路径一致性 · P1]** §A5 引用 `packages/server/src/fs-hash.ts` 的 `hashDir` / `hashFile`，实际文件为 `packages/server/src/fs-util.ts`（grep 验证：`search_file pattern=fs-hash.ts` 0 命中；`packages/server/src/fs-util.ts` 存在）。违反 **R1**。
+
+**合理性（A 维度）：**
+
+- ✅ [A1] 独立表方案拒绝借 `skills` 表（B）/ JSON stub（C）的论证扎实，且与 v0.4 SystemSkill 路线同构可比，D4 实践到位。
+- ✅ UNIQUE(project_id, type, name) + `ON DELETE CASCADE` 外键设计合理，与 §6 "`ProjectService.unregister` 级联删 LocalSkill" 呼应，无漂移。
+
+**清晰度（B 维度）：**
+
+- ✅ CHECK 约束把 enum 值固化到 DB 层，避免 JS 层漂移（D1 实践）。
+- ⚠️ [B4] "migration 单测" 的描述因 C1 问题而意义不明，**PR1 原子性理由需改写**为"schema 扩展 + 幂等 `CREATE TABLE IF NOT EXISTS` 叠加 + domain 类型同 PR 落地"。
+
+**PR1 结论：需修复 C1（P0）+ C3（P1）+ B4（表述）后方可进入实施。**
+
+---
+
+### PR2 — `LocalSkillService` + `LocalSkillRepository` + 单测
+
+**内容**：Service 五个方法 + Repo CRUD + 12 个单测。
+
+**可行性：**
+
+- ✅ [C1] `LocalSkillService.adopt / unadopt / rescan / suggestFromUnmatched / autoAdoptFromUnmatched` 的依赖在代码中均可达：
+  - `ProjectBootstrapService.scan()` 返回 `unmatched[]` — `packages/server/src/services/project-bootstrap.ts` 对外已暴露 `scan()` 方法，`suggestFromUnmatched` 可直接消费
+  - `subscriptions` 表 / Repository 在 `packages/server/src/db/subscriptions.ts` 存在，name_collision 检测可实施
+  - `LockManager` + `projectBootstrapLockKey` 在 `packages/server/src/lock.ts` 已导出（v0.5 引入，A8 声称"复用 v0.5 A9 锁" grep 验证通过）
+  - `BOOTSTRAP_SCAN_CONFIG` 在 `packages/shared/src/domain.ts` 已存在，auto-adopt heuristic 的"在三个 root 之一下"条件可判定
+- ✅ [C5] `autoAdoptFromUnmatched` 被 fire-and-forget 路径（`ProjectBootstrapService.scanAndAutoSubscribe` → event emit）调用。Spec §3.1 未显式写 per-item try/catch，但 **§A2 heuristic 第 4 条 + §6 提示 "subscribe 路径不变" 暗示**写路径会逐条处理，PR2 实施时**必须复用 `subscribeBatch:287-313` 的 per-ref try/catch 模式**（R4）。**建议 Spec §3.1 在 `LocalSkillService.autoAdoptFromUnmatched(...)` 箭头下明确标注 "per-entry try/catch, 失败进 failed[]，不 raise"**。
+
+**合理性：**
+
+- ✅ [A7] `rescan` 不新增 LocalSkill 的决策（PR2 明确 A7）保持 "bootstrap = 导入 / rescan = 健康刷新" 的职责分离，概念负担低。
+- ⚠️ [A5] `modified` 状态"仅信息性"而不触发任何自动行为 —— 合理，但需 Spec 明示 **UI 上 `modified` 和 `present` 的徽章是否均显示**（§1.15 "每行列 State" 未列举 `modified` 徽章的 copy）。属 B3 细化建议。
+
+**清晰度：**
+
+- ✅ [B1/B2] Service 五方法的签名 + 返回值 + 副作用矩阵齐全。
+- ⚠️ [B3] `adopt` 中 "从 BOOTSTRAP_SCAN_CONFIG 路径解析 rel_path" 实际返回多个候选 root（`skills/` / `commands/` / `agents/`），Spec 未明示 "若用户传入 (type=skill, name=foo) 而 fs 上只有 `commands/foo.md`（类型对不上）应返回 code='LOCAL_SKILL_TYPE_MISMATCH' 还是 'LOCAL_SKILL_NOT_ON_DISK'"。建议 §3.2 数据流补一行。
+
+**PR2 结论：无 P0 阻塞；建议修复 3 处小细化（R4 标注 / `modified` UI 徽章 / 错误码枚举），可与 PR1 并行修订。**
+
+---
+
+### PR3 — HTTP 端点 + shared schemas + SSE
+
+**内容**：5 个端点 + Zod schemas + `EventType.LocalSkillsChanged` 接入。
+
+**可行性：**
+
+- ✅ [C1] `packages/shared/src/schemas/events.ts` 的 `EventType` 枚举 + `AstackEventSchema` discriminated union 是 spec 声称的扩展点；在该文件新增 `LocalSkillsChanged = "local_skills.changed"` 成员 + 新增 `LocalSkillsChangedEventSchema` 并加入 union 是**原子操作**（R3）。
+- ✅ [C1] `packages/server/src/http/routes.projects.ts` 已有 bootstrap / subscription 端点的既定风格，新增 5 条路由可对齐，DI 经 `ServiceContainer` 注入 `localSkillService` 也可达（见 PR4）。
+- ✅ [C6] `ApplyLocalSkillsResultSchema` 对齐 v0.5 `ApplyResolutionsResult` —— 直接复用 `BootstrapFailedEntry` + 遵循 **R7（`failed[]` 元素带 `error_code` + `error_detail`）**。Spec §A9 有明确落点，PR3 实施时需在 `catch` 里同步抽取 `AstackError.code` + `AstackError.details` —— **建议 §A9 补一句 "`failed[]` 元素结构 = `BootstrapFailedEntry` shape = `{ type, name, error_code, error_detail, error }`"，避免 PR 实施时对 "对齐" 的字段级误解**。
+
+**合理性：**
+
+- ✅ [A8] 一个 coarse `.changed` 事件 + `summary` 计数而非分项事件，符合 v0.5 `bootstrap_resolved` 的收敛原则；前端按 "invalidate 单一 query key" 消费成本低。
+- ⚠️ [A9] `LocalSkillsChangedSummary` 字段 `{ added, removed, modified, missing }` 是**增量差值还是绝对值**？spec §A8 只写 "payload 含 summary"，未明示语义。建议明确为 **"相对于本次事件起因的 delta，用于前端 toast；全量数据以 list 为准"**。
+
+**清晰度：**
+
+- ✅ 5 条端点的 HTTP 方法 / 路径 / 请求体 / 响应体对称，命名遵循 v0.5 `/api/projects/:id/bootstrap/*` 的约定。
+
+**PR3 结论：无 P0；A9 字段级明确 + `summary` 语义各一条建议后即可实施。**
+
+---
+
+### PR4 — `ProjectBootstrapService` 改造 + 回归测试
+
+**内容**：scanRaw 过滤 "已 adopt"、`autoAdoptFromUnmatched` 调用接入、回归测试。
+
+**可行性：**
+
+- ✅ [C1] Spec §3.1 "在 `filter ignored_local` 后追加 `filter 已 adopted LocalSkill`" 的插入点可达：`project-bootstrap.ts` 的 `collectIgnoredKeys` / `collectSubscribedKeys` 就在 scanRaw 主体（已验证 `ignored_local` 流已经存在，同类 key-based skip 模式可对称 "collectAdoptedLocalSkillKeys"）。
+- ✅ [C4] 锁复用 A8 `projectBootstrapLockKey`，v0.5 已经在跨 Service 层面覆盖 (`SyncService.syncProject` / `ProjectBootstrapService` 4 条写路径)，**R6（护栏对称）** 自然成立 —— LocalSkill 3 条写路径一次性并入。
+
+**合理性：**
+
+- ✅ [A2] heuristic 第 4 条（在三个 root 之一）+ 第 1 条（通过 NAME_REGEX）叠加过滤已足够剔除 `.claude/commands/TODO.md` 等草稿，合理。
+- ⚠️ [A2] heuristic 第 2 条 "不在 `ignored_local`" —— 但 `ignored_local` 的语义是 v0.5 "bootstrap 阶段明确说不订阅的 ambiguous"，对 unmatched 条目来说用户**从未被问过是否 ignore**，这条过滤通常不会命中。逻辑不错，只是**条件冗余**；建议 §A2 heuristic 注释一句 "第 2 条在 unmatched 分支实际几乎不命中，保留是为 A3 的 `ignored_local` 语义双向护栏"。属 B3。
+
+**清晰度：**
+
+- ✅ §6 跨迭代影响表已把 `ProjectBootstrapService.scanRaw` 标出 "过滤列表新增已 adopt LocalSkill"。
+
+**PR4 结论：无 P0；1 条建议性注释。是本次最"顺"的 PR。**
+
+---
+
+### PR5 — 前端（api / hook / Panel / Drawer / Tabs / empty state）
+
+**内容**：`api.ts` 方法、`LocalSkillsPanel`、`AdoptDrawer`、Tabs 接入、`SubscriptionsPanel` 空状态放宽。
+
+**可行性：**
+
+- 🟡 **[C1 · P2]** Spec §1.14 写 "新增 `useQuery(['local-skills', projectId])`；SSE `local_skills.changed` 到达时 invalidate 这个 key"；§A8 再次用 "invalidate query key" 表述。**实际项目前端未安装 `@tanstack/react-query`**：`packages/web/package.json` 的 `dependencies` 只有 `react / react-dom / react-router-dom / zod`；现状用 `useState + useEffect + useEventListener` 手动管理（如 `ProjectDetailPage.tsx`）。
+  - 这是 **v0.5 spec 同款的语义借喻**（v0.5 spec 中 `useQuery` 出现 29 次，实际实施时映射为 "useCallback + useState + useEventListener 手动刷新"）。
+  - 建议在 Spec §1.14 或新增 "前端约定" 小节补一句："`useQuery(key)` 在本项目语境下表达 `load + SSE invalidate` 的刷新契约，实际实现用 `useState + useCallback + useEventListener` 手动模式（同 v0.5），**不引入 react-query 依赖**"。
+  - **不上 P1 是因为**：(a) 这是项目团队已达成的默契；(b) v0.5 已成功按该模式落地；(c) 实施时不会真的去 npm install react-query。但首次读 spec 的人会困惑，属 P2 清晰度 / 风险信号。
+- ✅ [C1] `ProjectDetailPage.tsx` 的 Tabs 结构 —— 当前 `TAB_IDS = ['subscriptions', 'tools', 'history', 'harness', 'settings']` + `validateTab`，spec §17 声称插入 `Local Skills` 在 `Subscriptions` 之后可达。**小歧义**：spec §A4 "Tab 顺序：Subscriptions / Local Skills / Linked Dirs / Sync History / Harness / Settings"，但代码中不存在名为 `Linked Dirs` 的独立 tab（linked_dirs 数据目前在 `Settings` / `Harness` 子视图里，无独立 tab）。建议 §A4 / §17 重写 tab 顺序为 **"Subscriptions / Local Skills / Tools / Sync History / Harness / Settings"**，以实际 TAB_IDS 为准。
+- ✅ [C1] `SubscriptionsPanel.tsx` 第 151-158 行的空状态三叉分支（`subscriptions.length === 0 ? (unmatched.length > 0 ? <UnmatchedEmptyState/> : <EmptyState/>) : <SubscriptionGroups/>`）—— spec §18 要求条件放宽为 `unmatched.length > 0` 任何情况都显示，**可达但需重构嵌套**（从三叉变为 "head banner + body"）。PR5 需在 spec 补一句 "将 `UnmatchedEmptyState` 从空态分支抽离为 `SubscriptionsPanel` 的顶部 banner 组件，与 `SubscriptionGroups` 并存" 以明确位置。
+- ✅ [C1] `AdoptDrawer` 复用 v0.3 Drawer primitive —— `packages/web/src/components/ui/Drawer.tsx` 存在，grep 验证通过。
+
+**合理性：**
+
+- ✅ [A4] 独立 tab vs 合并 Subscriptions 的论证扎实（语义差异大、操作按钮不兼容）。
+- ✅ Tab 右侧计数徽章一致（与 Subscriptions 徽章同款视觉权重）。
+
+**清晰度：**
+
+- ⚠️ [B3] §1.15 "每行列 State / Name / Origin / Path / Actions" —— `State` 的徽章 copy 未列（`present` / `modified` / `missing` / `name_collision` 分别是什么文案和颜色？）。建议补一张 4 行 2 列表（state × {copy, color}）。
+- ⚠️ [B3] §1.22 "LocalSkillsPanel + AdoptDrawer 单测 ≥ 5" —— 只给了数量没给覆盖矩阵。建议列举 5 个维度（空态 / 带 suggestions / adopt 提交 / unadopt 二次确认 / name_collision 徽章）。
+
+**PR5 结论：C1 useQuery 措辞歧义（P2）+ tab 顺序名字错配（P1）需在 spec 里修正，其余小细化。**
+
+---
+
+### PR6 — E2E + 文档
+
+**内容**：3 个 E2E 场景 + AGENTS.md / INDEX.md / BOUNDARIES.md / golden-rules 沉淀。
+
+**可行性：**
+
+- ✅ [C1] E2E 三个场景（legacy register auto-adopt / 手动 adopt+unadopt / rescan 发现 missing）覆盖本迭代主要路径。
+- ✅ AGENTS.md / INDEX.md / BOUNDARIES.md 路径均已存在，文档更新属纯加法。
+
+**清晰度：**
+
+- ⚠️ [B4] Spec §5 PR6 原子性理由 "E2E 和文档原子收口" —— 但 "golden-rules 可能的新规则沉淀" 措辞模糊；沉淀规则本是 `/spec_review` 和 `/code_review` 的职责（按 INDEX.md），PR6 不应承担"可能新增黄金法则"的负担。建议改为 "归档与 INDEX.md / BOUNDARIES.md 状态更新；golden-rules 已在 spec_review 阶段沉淀，PR6 只做最终状态刷新"。
+
+**PR6 结论：无 P0；1 条措辞微调。**
+
+---
+
+## 4. 五维汇总评分
+
+### 合理性 A1–A8
+
+| 编号 | 项 | 评分 | 备注 |
+|---|---|---|---|
+| A1 | 目标与方案对齐 | ✅ | "让 legacy 项目本地资产可见" 通过独立 tab + auto-adopt 精准命中 |
+| A2 | 方案选型理由充分 | ✅ | A1–A10 每条都有候选方案 + 拒绝理由 |
+| A3 | 边界决策明示 | ✅ | Out of scope 11 项、已知情风险 7 项 |
+| A4 | 跨迭代影响评估 | ✅ | §6 七模块全覆盖 |
+| A5 | 前置依赖清楚 | ⚠️ | 声称的 "v0.2 migration 模式" 不存在（C1 P0） |
+| A6 | 与活跃规则 R1–R7 对齐 | ⚠️ | 违反 R1 两次（fs-hash.ts / 0007_*.ts）；R4 隐含但未标注 |
+| A7 | 风险兜底具体 | ✅ | §8 含可操作兜底 |
+| A8 | 不引入越界重构 | ✅ | 对 v0.5 Subscriptions 的唯一改动就是 empty state 条件放宽 |
+
+### 清晰度 B1–B7
+
+| 编号 | 项 | 评分 | 备注 |
+|---|---|---|---|
+| B1 | 接口/签名完整 | ✅ | §4 权威类型 + §A9 shape 对齐 |
+| B2 | 数据流可追踪 | ✅ | §3.1–3.5 五条路径各自闭环 |
+| B3 | UI 交互细节 | ⚠️ | State 徽章 copy / UI tab 命名 / 错误码枚举需补（P1–P2） |
+| B4 | PR 原子性理由 | ⚠️ | PR1 因 migration 幻象而无效；PR6 措辞需微调 |
+| B5 | 测试覆盖矩阵 | ✅ | §7 按维度列 case，总数 ≥ 20 |
+| B6 | 命名一致性 | ⚠️ | `adopted` vs `succeeded`（IC2）；`fs-hash.ts` vs `fs-util.ts`（C3） |
+| B7 | 文档导航链接有效 | ✅ | 与 INDEX.md / BOUNDARIES.md 对齐 |
+
+### 可行性 C1–C7（代码依据为主）
+
+| 编号 | 项 | 评分 | 代码依据 |
+|---|---|---|---|
+| **C1** | 复用声明 grep 验证 | 🔴 P0 | Migration 机制 + `fs-hash.ts` 双重幻象（见 §3 PR1） |
+| C2 | 锁与并发 | ✅ | `lock.ts::projectBootstrapLockKey` 已验证存在 |
+| C3 | 命名与路径一致性 | 🟡 P1 | `fs-util.ts` / tab 顺序名字错配 |
+| C4 | 跨服务护栏对称（R6） | ✅ | LocalSkill 3 条写路径并入 v0.5 锁 family |
+| C5 | fire-and-forget 错误处理（R4） | ⚠️ | `autoAdoptFromUnmatched` 未显式要求 per-item try/catch（建议 §3.1 标注） |
+| **C6** | Batch outcomes 契约（R7） | ⚠️ P2 | A9 对齐 v0.5，但未显式列 `error_code/error_detail` 字段（建议补） |
+| **C7** | 前端 hook 契约 | 🟡 P2 | `useQuery` 措辞歧义（项目无 react-query） |
+
+### Harness 实践 D1–D7
+
+| 编号 | 项 | 评分 | 备注 |
+|---|---|---|---|
+| D1 | 机械校验优于人工约定 | ✅ | DB CHECK 约束 + UNIQUE 键 + `ON DELETE CASCADE` 把约束下沉到 schema |
+| D2 | 文档即权威 | ✅ | §4 权威定义 + R2 显式声明 |
+| D3 | 最小改动原则 | ✅ | 对 v0.5 Subscriptions 只动 empty state 一处 |
+| D4 | 复用既有模式 | ✅ | SystemSkill / BootstrapResolution 均作为同构先例被引用 |
+| D5 | 知识沉淀入口 | ⚠️ | PR6 "golden-rules 可能的新规则沉淀" 越界（见 §3 PR6） |
+| D6 | 风险透明 | ✅ | §8 + §1 的"已知情接受风险" 双保险 |
+| D7 | Spec 驱动流程 | ✅ | 先 spec 后 code，本次评审在 Spec v1 draft 后、实施前 |
+
+---
+
+## 5. 关键问题清单（按严重度）
+
+### 🔴 P0（必须在进入 PR1 之前修复，属阻塞）
+
+1. **Migration 机制幻象（§1.3 / §7 / §8 / §5 PR1）**
+   - **现象**：Spec 反复声称 "独立迁移文件 `0007_local_skills.ts`（沿用 v0.2 的 migration 模式）" / "migration 幂等 + 单测强制 up/down 回归" / "Migration 正向/幂等 3 case"。
+   - **事实**：项目 SQLite 层注释明言 "No version table, no migration machinery"（`connection.ts:17-19` / `schema.ts:6`）；`db/` 目录下无任何 `0001_*.ts` ~ `0006_*.ts` 文件；整个代码库 `grep "0007"` 0 命中（仅本 spec 有）；`CREATE TABLE IF NOT EXISTS` 本身已保证幂等，无 down 语义可测。
+   - **修复建议**：
+     - §1.3 去掉 "独立迁移文件 `0007_local_skills.ts`（沿用 v0.2 的 migration 模式）"；改写为 "追加到 `packages/server/src/db/schema.ts::SCHEMA_DDL` 常量末尾；`CREATE TABLE IF NOT EXISTS local_skills` + `CREATE INDEX IF NOT EXISTS idx_local_skills_project` 天然幂等"。
+     - §7 测试维度表的 "Migration 正向/幂等" 行改为 **"Schema 幂等（重复 openDatabase 不报错 / 已有表时 NOOP）"**，case 数下调到 1–2。
+     - §5 PR1 原子性理由改为 "schema 加表 + 幂等 DDL 叠加 + domain 类型同 PR 落地"。
+     - §8 "migration 失败" 风险行改为 "DDL 叠加导致现有 daemon 起不来" + 兜底 "DDL 只加 `CREATE ... IF NOT EXISTS`，不删不改既有列"。
+   - **关联反模式/规则**：P1（幻象复用）+ P3（schema 漂移联想）+ 违反 R1。
+
+### 🟡 P1（不阻塞，但 merge 前必须改 Spec）
+
+2. **§A5 路径 `fs-hash.ts` 与实际文件不符** — 改为 `packages/server/src/fs-util.ts`。违反 R1。
+
+3. **§A4 / §17 Tab 顺序的 "Linked Dirs" 命名错配** — 项目 `TAB_IDS` 实际为 `['subscriptions', 'tools', 'history', 'harness', 'settings']`。建议改为 `Subscriptions / Local Skills / Tools / Sync History / Harness / Settings`。触发 R1（UI 元素的命名同样需 grep 验证）。
+
+4. **IC2 `adopted` vs `succeeded` 字段名漂移** — §1.5 文字 "返回 `ApplyLocalSkillsResult = { adopted, failed }`" 与 §4 权威定义 `{ succeeded, failed }` 不符。§4 权威，§1 改写。违反 R2。
+
+### 🟢 P2（建议在 PR 进入 review 前澄清）
+
+5. **§1.14 / §A8 `useQuery(['local-skills', projectId])` 表述歧义** — 项目前端无 react-query。建议 §1.14 首次出现时脚注 "此处 `useQuery` 为语义借喻，实际以 v0.5 的 `useState + useCallback + useEventListener` 手动刷新模式实现；不引入 react-query 依赖"。
+
+6. **§A9 `ApplyLocalSkillsResult.failed[]` 元素字段未对齐 R7** — 仅写 "对齐 v0.5 `ApplyResolutionsResult` shape"；建议显式补 `{ type, name, error_code, error_detail, error }` 五字段，避免 PR3 实施时理解为只继承 `{ type, name, message }` 三字段。
+
+7. **§A8 `LocalSkillsChangedSummary` 字段 `{ added, removed, modified, missing }` 语义未明** — delta 还是绝对值？建议明示 "delta（相对于本次事件起因），前端按需从 toast 展示；全量以 list 为准"。
+
+8. **§3.1 数据流未显式标注 `autoAdoptFromUnmatched` 的 per-item try/catch（R4）** — fire-and-forget 路径。建议箭头下加 "per-entry try/catch, 失败进 failed[] 不 raise，顶层再加一层 `.catch(safeLog)`"。
+
+9. **§1.15 State 徽章 copy 未列** — 建议补一张 `state × {copy, color}` 表（`present` 中性 / `modified` 蓝 / `missing` 灰 / `name_collision` 橙）。
+
+10. **§5 PR6 "golden-rules 可能的新规则沉淀"** — 越界；沉淀由 spec_review / code_review 负责，PR6 改为 "golden-rules 最终状态刷新（沉淀动作前置于 spec_review）"。
+
+---
+
+## 6. 综合评价
+
+- **方向判断**：✅ **坚决赞成**。v0.5 暴露的 "13 条 unmatched 不可见" 是真实用户痛点（FinClaw 数据为证），LocalSkill 作为独立领域概念与 SystemSkill 同构是正确抽象。A1 / A3 / A10 三处决策尤为扎实（不污染 Subscription / 不写 manifest / 不改头部计数）。
+- **设计质量**：整体扎实，A1–A10 每条决策都有候选方案 + 拒绝理由，Out-of-scope 明确，风险承认透明。
+- **主要风险**：**1 个 P0（migration 幻象）** 把 Spec 与项目现实拉扯开了一个真实的偏差 —— 这正是 R1 存在的原因。此外 3 处 P1 均为文本级修正。
+- **实施复杂度**：PR1 在修复 P0 后反而**变简单**（不用另造 migration 框架，直接叠 DDL）；PR2–PR5 的复杂度中等；PR6 收口。总体估算可控。
+
+**评审结论：条件性通过。** 修复 P0（必须）+ 3 条 P1（建议）后 Spec 可升级为 v1.1 并进入 PR1 实施。P2 的 6 条可在各自 PR 进入前逐步澄清，不强求同步修订。
+
+---
+
+## 7. 建议下一步
+
+1. **[24h 内]** Spec 作者修 P0 + P1 共 4 条，Spec 状态从"评审中"升级为 "v1.1 - ready for PR1"。
+2. **[修订后]** 不再走二次全量 review；改为小范围 diff review（只看这 4 条的改动，30 分钟）。
+3. **[PR1 启动]** 进入实施，锚定本报告的 "§3 PR1 结论" + "§3 PR2 结论" 做 PR1/PR2 code review 时的 checklist。
+4. **[PR4 启动前]** 再次核对 `ProjectBootstrapService.scanRaw` 的过滤链插入点，确保 "已 adopt LocalSkill" 的 DB 查询不在热路径上拖慢 scan（如需，加 `(project_id)` 索引命中测试）。
+5. **[PR5 启动前]** 澄清 P2 的 `useQuery` 措辞 + tab 顺序，避免前端 reviewer 被文本误导。
+
+---
+
+## 附录 A · 知识沉淀触发矩阵
+
+本次评审发现的 P0/P1 问题与已有反模式/规则的关系：
+
+| 问题 | 已有反模式 | 已有规则 | 是否需要新增沉淀 |
+|---|---|---|---|
+| Migration 机制幻象 | P1（幻象复用）| R1 | ❌ 已被 R1 / P1 完整覆盖，增加一条"典型案例 v0.7"足矣 |
+| `fs-hash.ts` 路径错 | P1 | R1 | ❌ 同上 |
+| Tab 顺序命名错 | P1 | R1 | ❌ 同上 |
+| `adopted` vs `succeeded` 漂移 | P2（三处定义不一致）| R2 | ❌ 经典 P2 案例，无需新规则 |
+| `useQuery` 措辞歧义 | (尚无)| (尚无)| 🟡 **候选新规则**：见附录 B |
+
+## 附录 B · 候选新规则 / 案例追加
+
+### 候选 1（本次建议追加为典型案例，不新增规则编号）
+
+**P1 新增案例：** v0.7-local-skills §1.3 声称 "独立迁移文件 `0007_local_skills.ts`（沿用 v0.2 的 migration 模式）"；实际 `packages/server/src/db/connection.ts:17-19` 注释明言 "No version table, no migration machinery"，整个代码库无任何 migration 文件。Spec 作者凭对"典型 Web 项目 migration 模式"的印象编写，未对照 `connection.ts` 和 `db/` 目录结构核实。
+
+**R1 新增反例：** "复用 `packages/server/src/fs-hash.ts::hashDir`"（实际为 `fs-util.ts`）；"UI tab 顺序含 `Linked Dirs`"（实际 tab 命名为 `Tools` / `history`）。
+
+### 候选 2（观察期，暂不沉淀为新规则）
+
+**现象**：Spec 使用 `useQuery(['key', id])` 这种 react-query 语义表述描述前端刷新契约，但项目前端从未引入 react-query，实际以 `useState + useEventListener` 手动刷新实现。v0.5 / v0.7 spec 均有此现象，是项目约定的默契。
+
+**观察建议**：若 v0.8+ 仍持续且出现新读者困惑，再沉淀为 "R8 · Spec 中涉及技术栈约定时须注明语义借喻 / 实际栈" 规则。**本次暂不沉淀**（尚无被研发误解引发实际返工的案例）。
+
+---
+
+*报告归档：`docs/version/Iteration0.7_LocalSkills_REVIEW.md`*
+*评审基线：`docs/retro/golden-rules.md` R1–R7 + `docs/retro/patterns.md` P1–P7*
+*下一步：Spec 作者修 P0 + P1 → Spec 升级 v1.1 → PR1 启动*

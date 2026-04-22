@@ -19,6 +19,9 @@
 **案例：**
 - v0.5-subscription-bootstrap spec §A7 假设复用 `subscription.added` → 代码里 `EventType` 枚举（`schemas/events.ts:32-76`）不含该成员，`subscription.ts` 全文 `events.emit` 0 命中
 - v0.5-subscription-bootstrap spec §A6 声称 `DEFAULT_SCAN_CONFIG` "涵盖 skills + commands + agents" → `domain.ts:202-207` 实际只含 skills + commands
+- v0.7-local-skills spec §1.3 / §7 / §8 声称 "独立迁移文件 `0007_local_skills.ts`（沿用 v0.2 的 migration 模式）" + "migration 幂等 + 单测强制 up/down 回归" —— 实际 `packages/server/src/db/connection.ts:17-19` 与 `schema.ts:6` 注释明言 "single `SCHEMA_DDL` constant. No version table, no migration machinery"，`db/` 目录下无任何 `0001_*.ts`~`0006_*.ts`，全仓 grep `"0007"` 0 命中；项目实际用 `CREATE TABLE IF NOT EXISTS` 叠加 + 幂等 DDL，无 up/down 语义可测。Spec 作者凭对"典型 Web 项目 migration 模式"的印象编写，未对照 `connection.ts` 实际机制
+- v0.7-local-skills spec §A5 引用 `packages/server/src/fs-hash.ts::hashDir / hashFile` —— 实际文件为 `packages/server/src/fs-util.ts`（`fs-hash.ts` 全仓 0 命中）
+- v0.7-local-skills spec §A4 / §17 UI tab 顺序含 `Linked Dirs` —— `ProjectDetailPage.tsx` 实际 `TAB_IDS = ['subscriptions', 'tools', 'history', 'harness', 'settings']`，无独立的 linked-dirs tab
 
 **关联黄金法则：** R1
 
@@ -37,6 +40,7 @@
 
 **案例：**
 - v0.5-subscription-bootstrap `applyResolutions` response：§A4 写 `{subscribed, failed}`、§3.3 写 `{subscribed, ignored, failed}`、PR3 test 4 又隐含需要 `ignored_local` 写入路径；三处字段集互不相同
+- v0.7-local-skills `ApplyLocalSkillsResult`：§4 权威定义 `{ succeeded, failed }`，§1.5 文字表述为 `{ adopted, failed }`；虽只两处错配（Spec 内部），但 §4 已显式标注 "本节为权威定义，后续段落只引用不重述（R2）"，第 2 次描述时仍漂成 `adopted` 说明 R2 的指针式引用纪律需要持续强化
 
 **关联黄金法则：** R2
 
