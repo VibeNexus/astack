@@ -55,6 +55,14 @@ export interface StartDaemonOptions {
    */
   seeds?: boolean;
   /**
+   * Whether to run the GitignoreGuardService backfill pass on startup.
+   * Defaults to true. Tests that spin up a real daemon against a DB
+   * holding registered projects on disk should pass `false` if they
+   * don't want the daemon to mutate those projects' `.gitignore`
+   * files during the test run.
+   */
+  gitignoreBackfill?: boolean;
+  /**
    * Log level for the internally-constructed tee logger. Defaults to
    * "info". v0.6+.
    */
@@ -146,6 +154,40 @@ export async function startDaemon(
         error: err instanceof Error ? err.message : String(err)
       });
     });
+  }
+
+  // Backfill `.gitignore` for projects registered before the
+  // GitignoreGuardService shipped. The subscriber only fires on new
+  // `project.registered` events, so without this pass legacy projects
+  // stay uncovered until the user re-registers them. Runs once per
+  // daemon boot; a second boot with no new projects is a pure read
+  // for every project (see GitignoreGuardService.ensureEntries which
+  // short-circuits on zero missing entries).
+  //
+  // Fire-and-forget with its own try/catch: a thrown error inside
+  // `backfillExisting` (e.g. DB list failure) must never take the
+  // daemon down. `backfillExisting` itself already swallows per-
+  // project failures; the outer catch is defense-in-depth for the
+  // list() call and any unforeseen surface.
+  if (opts.gitignoreBackfill !== false) {
+    try {
+      // Pull every registered project. `list({limit: 10_000})` is a
+      // deliberate cap: even a power user with hundreds of projects
+      // stays well under this, and the single-shot read avoids
+      // threading pagination through a boot-path helper. If this
+      // cap ever bites we add a `listAll()` repo method.
+      const { projects } = app.container.projectService.list({
+        offset: 0,
+        limit: 10_000
+      });
+      app.container.gitignoreGuardService.backfillExisting(
+        projects.map((p) => ({ id: p.id, path: p.path }))
+      );
+    } catch (err) {
+      logger.error("gitignore.backfill_unexpected_failure", {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    }
   }
 
   const handle: DaemonHandle = {

@@ -23,6 +23,7 @@ import { openDatabase, type Db } from "../db/connection.js";
 import { EventBus } from "../events.js";
 import { LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
+import { GitignoreGuardService } from "../services/gitignore-guard.js";
 import { ProjectBootstrapService } from "../services/project-bootstrap.js";
 import { ProjectService } from "../services/project.js";
 import { RepoService } from "../services/repo.js";
@@ -134,6 +135,19 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     systemSkills: systemSkillService
   });
 
+  // Gitignore guard: self-contained subscriber that auto-appends
+  // `.astack/` + `.astack.json` to the project root `.gitignore` when a
+  // new project is registered. Construct last so any earlier subscriber
+  // (bootstrap, system-skills) that might also touch the filesystem has
+  // already wired up. The service has no dependencies beyond events +
+  // logger, so ordering here is purely cosmetic (all event dispatch is
+  // synchronous within EventBus.emit, so subscriber order mirrors
+  // construction order).
+  const gitignoreGuardService = new GitignoreGuardService({
+    events,
+    logger: opts.logger
+  });
+
   const container: ServiceContainer = {
     config: opts.config,
     db,
@@ -146,7 +160,8 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     symlinkService,
     syncService,
     systemSkillService,
-    projectBootstrapService
+    projectBootstrapService,
+    gitignoreGuardService
   };
 
   const app = new Hono();
