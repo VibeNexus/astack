@@ -40,6 +40,19 @@ export function eventsRoutes(c: ServiceContainer): Hono {
         })
       });
 
+      // Local shutdown flag — flipped by EventBus.shutdown() when the
+      // daemon is going down. We can't rely on stream.aborted alone
+      // because server.close() doesn't abort in-flight handlers.
+      let shutdownRequested = false;
+      const unsubscribeShutdown = c.events.onShutdown(() => {
+        shutdownRequested = true;
+        // Best-effort: close the stream so the while loop wakes up
+        // from its sleep and server.close() can resolve.
+        stream.close().catch(() => {
+          /* already closed */
+        });
+      });
+
       // Subscribe to bus.
       const unsubscribe = c.events.subscribe((emitted) => {
         stream
@@ -57,9 +70,9 @@ export function eventsRoutes(c: ServiceContainer): Hono {
 
       // Heartbeat loop — awaiting sleeps ensures the stream stays open.
       try {
-        while (!stream.aborted && !stream.closed) {
+        while (!stream.aborted && !stream.closed && !shutdownRequested) {
           await stream.sleep(HEARTBEAT_INTERVAL_MS);
-          if (stream.aborted || stream.closed) break;
+          if (stream.aborted || stream.closed || shutdownRequested) break;
           await stream.writeSSE({
             event: EventType.Heartbeat,
             data: JSON.stringify({
@@ -70,6 +83,7 @@ export function eventsRoutes(c: ServiceContainer): Hono {
         }
       } finally {
         unsubscribe();
+        unsubscribeShutdown();
       }
     })
   );

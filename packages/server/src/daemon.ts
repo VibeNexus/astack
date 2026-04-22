@@ -116,9 +116,33 @@ export async function startDaemon(
     app,
     server,
     close: async () => {
-      await new Promise<void>((resolve) => {
+      // 1. Tell long-lived SSE handlers to bail out of their while loops.
+      //    Without this, server.close() would wait indefinitely for the
+      //    SSE response to finish (which only happens when the client
+      //    disconnects — e.g. browser tab closed).
+      app.container.events.shutdown();
+
+      // 2. Ask the HTTP server to stop accepting new connections. The
+      //    callback fires only after all active sockets are closed.
+      const closed = new Promise<void>((resolve) => {
         server.close(() => resolve());
       });
+
+      // 3. Force-close idle keep-alive sockets and then any stragglers.
+      //    `closeAllConnections` landed in Node 18.2; guard with optional
+      //    chaining so older runtimes still shut down (just less quickly).
+      const srv = server as ServerType & {
+        closeIdleConnections?: () => void;
+        closeAllConnections?: () => void;
+      };
+      srv.closeIdleConnections?.();
+      // Give SSE handlers one tick to observe the shutdown flag and
+      // close their streams cleanly, then drop anything still hanging.
+      setTimeout(() => {
+        srv.closeAllConnections?.();
+      }, 100).unref();
+
+      await closed;
       app.dispose();
       removePidFile(config);
       logger.info("daemon.stopped", { pid: process.pid });
@@ -128,13 +152,33 @@ export async function startDaemon(
   return handle;
 }
 
+/** Hard timeout for graceful shutdown before we force-exit. */
+const SHUTDOWN_TIMEOUT_MS = 5_000;
+
 /** Install SIGTERM/SIGINT handlers that cleanly shut down the daemon. */
 export function installSignalHandlers(handle: DaemonHandle, logger: Logger): void {
   let shuttingDown = false;
   const handler = async (signal: NodeJS.Signals): Promise<void> => {
-    if (shuttingDown) return;
+    if (shuttingDown) {
+      // Second signal → escape hatch: exit immediately. Users sometimes
+      // hit Ctrl+C repeatedly when the graceful shutdown appears stuck;
+      // honour that intent instead of silently ignoring it.
+      logger.info("daemon.signal.force_exit", { signal });
+      process.exit(130); // 128 + SIGINT(2) by convention
+    }
     shuttingDown = true;
     logger.info("daemon.signal", { signal });
+
+    // Absolute timeout: if graceful shutdown doesn't complete in
+    // SHUTDOWN_TIMEOUT_MS, bail out with a non-zero exit code.
+    const watchdog = setTimeout(() => {
+      logger.error("daemon.close_timeout", {
+        timeout_ms: SHUTDOWN_TIMEOUT_MS
+      });
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    watchdog.unref();
+
     try {
       await handle.close();
     } catch (err) {
@@ -142,6 +186,7 @@ export function installSignalHandlers(handle: DaemonHandle, logger: Logger): voi
         error: err instanceof Error ? err.message : String(err)
       });
     } finally {
+      clearTimeout(watchdog);
       process.exit(0);
     }
   };
