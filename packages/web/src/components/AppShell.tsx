@@ -40,9 +40,8 @@ export function AppShell(): React.JSX.Element {
         projects.projects.map(async (p) => {
           try {
             const st = await api.projectStatus(p.id);
-            attention += st.subscriptions.filter(
-              (s) => s.state !== "synced"
-            ).length;
+            const hasIssue = st.subscriptions.some((s) => s.state !== "synced");
+            if (hasIssue) attention++;
           } catch {
             /* ignore per-project errors */
           }

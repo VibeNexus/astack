@@ -1,5 +1,5 @@
 /**
- * Routing smoke: render App and verify default route lands on Sync Status.
+ * Routing smoke: render App and verify default route lands on Dashboard.
  *
  * We don't stub the SSE provider's EventSource beyond the global noop set
  * up in test/setup.ts, nor do we try to hit the real daemon. fetch is
@@ -37,11 +37,11 @@ describe("App routing", () => {
     globalThis.fetch = origFetch;
   });
 
-  it("renders the Sync Status page on the root route", async () => {
+  it("renders the Dashboard page on the root route", async () => {
     render(<App />);
-    // Sidebar label + page heading both say 'Sync Status'.
+    // Sidebar label + page heading both say 'Dashboard'.
     await waitFor(() => {
-      const matches = screen.getAllByText("Sync Status");
+      const matches = screen.getAllByText("Dashboard");
       expect(matches.length).toBeGreaterThan(0);
     });
   });

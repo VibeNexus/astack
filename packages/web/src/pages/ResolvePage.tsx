@@ -90,7 +90,7 @@ export function ResolvePage(): React.JSX.Element {
       <div className="space-y-3">
         <div className="text-sm text-error">{error}</div>
         <Link to="/" className="text-sm underline text-text-secondary">
-          ← back to Sync Status
+          ← back to Dashboard
         </Link>
       </div>
     );

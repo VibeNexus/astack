@@ -22,7 +22,7 @@ import { ReposPage } from "./pages/ReposPage.js";
 import { ResolvePage } from "./pages/ResolvePage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { SkillMatrixPage } from "./pages/SkillMatrixPage.js";
-import { SyncStatusPage } from "./pages/SyncStatusPage.js";
+import { DashboardPage } from "./pages/DashboardPage.js";
 
 export function App(): React.JSX.Element {
   return (
@@ -31,7 +31,7 @@ export function App(): React.JSX.Element {
         <SseProvider>
           <Routes>
             <Route element={<AppShell />}>
-              <Route index element={<SyncStatusPage />} />
+              <Route index element={<DashboardPage />} />
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:id" element={<ProjectDetailPage />} />

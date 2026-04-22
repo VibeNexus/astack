@@ -58,7 +58,7 @@ export function linkedDirStatusInfo(status: LinkedDirStatus): {
   return LINK_LABELS[status];
 }
 
-/** Priority sort key for the Sync Status page (errors first). */
+/** Priority sort key for the Dashboard page (errors first). */
 export function subscriptionPriority(state: SubStateT): number {
   switch (state) {
     case SubscriptionState.Conflict:

@@ -24,7 +24,7 @@ describe("CommandPalette", () => {
 
   it("shows command list when open", () => {
     wrap(true);
-    expect(screen.getByText("Go to Sync Status")).toBeInTheDocument();
+    expect(screen.getByText("Go to Dashboard")).toBeInTheDocument();
     expect(screen.getByText("Go to Repos")).toBeInTheDocument();
     expect(screen.getByText("Go to Settings")).toBeInTheDocument();
   });

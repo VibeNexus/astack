@@ -33,7 +33,7 @@ export function Sidebar({ badges }: SidebarProps): React.JSX.Element {
   const { status } = useSse();
 
   const items: NavItem[] = [
-    { to: "/", label: "Sync Status", badge: badges.attention },
+    { to: "/", label: "Dashboard", badge: badges.attention },
     { to: "/repos", label: "Repos", badge: badges.repos },
     { to: "/projects", label: "Projects", badge: badges.projects },
     { to: "/matrix", label: "Matrix" },

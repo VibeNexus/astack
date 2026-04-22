@@ -41,10 +41,10 @@ export function CommandPalette({
   const commands: PaletteCommand[] = useMemo(() => {
     const list: PaletteCommand[] = [
       {
-        label: "Go to Sync Status",
+        label: "Go to Dashboard",
         hint: "⌘1",
         run: () => navigate("/"),
-        keywords: ["home", "dashboard"]
+        keywords: ["home", "dashboard", "sync", "status"]
       },
       {
         label: "Go to Repos",

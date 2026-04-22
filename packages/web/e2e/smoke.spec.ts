@@ -19,7 +19,7 @@ test.describe("smoke — scaffolding is wired", () => {
     // Sidebar brand
     await expect(page.getByText("Astack", { exact: true })).toBeVisible();
     // Primary nav (from Sidebar.tsx)
-    await expect(page.getByRole("link", { name: /Sync Status/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Dashboard/ })).toBeVisible();
     await expect(page.getByRole("link", { name: /Repos/ })).toBeVisible();
     await expect(page.getByRole("link", { name: /Projects/ })).toBeVisible();
   });
