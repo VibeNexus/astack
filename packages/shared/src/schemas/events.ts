@@ -107,7 +107,20 @@ export const EventType = {
    * Web clients use this to invalidate both `['status', projectId]` and
    * `['bootstrap', projectId]` query keys. See v0.5 spec §A7.
    */
-  SubscriptionsBootstrapResolved: "subscriptions.bootstrap_resolved"
+  SubscriptionsBootstrapResolved: "subscriptions.bootstrap_resolved",
+
+  /**
+   * LocalSkills state changed for a project (v0.7). Emitted when
+   * `LocalSkillService.adopt / autoAdoptFromUnmatched / unadopt / rescan`
+   * produces a DB side-effect. Payload carries a coarse `summary` so the
+   * Web UI can render a toast without re-fetching; callers ARE expected
+   * to re-fetch `GET /api/projects/:id/local-skills` after receiving
+   * this event (no per-row mutation payload).
+   *
+   * Only one event type for the whole v0.7 feature (coarse-grained by
+   * design, see spec §A8).
+   */
+  LocalSkillsChanged: "local_skills.changed"
 } as const;
 export type EventType = (typeof EventType)[keyof typeof EventType];
 
@@ -274,6 +287,22 @@ export const SubscriptionsBootstrapResolvedPayloadSchema = z.object({
   ignored_count: z.number().int().nonnegative()
 });
 
+/**
+ * LocalSkillsChanged: the project's local_skills table had a write
+ * side-effect (adopt / unadopt / rescan). The `summary` is a coarse
+ * delta — web clients use it for toast copy ("Rescan: 3 modified")
+ * and then re-fetch the full list. See v0.7 spec §A8.
+ */
+export const LocalSkillsChangedPayloadSchema = z.object({
+  project_id: z.number().int().positive(),
+  summary: z.object({
+    added: z.number().int().nonnegative(),
+    removed: z.number().int().nonnegative(),
+    modified: z.number().int().nonnegative(),
+    missing: z.number().int().nonnegative()
+  })
+});
+
 // ---------- Discriminated union ----------
 
 /**
@@ -352,6 +381,10 @@ export const AstackEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(EventType.SubscriptionsBootstrapResolved),
     payload: SubscriptionsBootstrapResolvedPayloadSchema
+  }),
+  z.object({
+    type: z.literal(EventType.LocalSkillsChanged),
+    payload: LocalSkillsChangedPayloadSchema
   })
 ]);
 export type AstackEvent = z.infer<typeof AstackEventSchema>;

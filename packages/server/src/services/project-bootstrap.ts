@@ -97,8 +97,14 @@ export interface ProjectBootstrapServiceDeps {
  * for upstream repo scanning where many repos lack agents/. Adding
  * agents to DEFAULT_SCAN_CONFIG itself is intentionally out of scope
  * for v0.5.
+ *
+ * v0.7: exported so LocalSkillService can reuse the exact same scan
+ * shape when computing content hashes and descriptions for adopt /
+ * rescan operations (spec §A5–§A7). Importing the same constant
+ * instead of duplicating the root list guarantees bootstrap and local
+ * adopt agree on what counts as a scannable local skill.
  */
-const BOOTSTRAP_SCAN_CONFIG: ScanConfig = {
+export const BOOTSTRAP_SCAN_CONFIG: ScanConfig = {
   roots: [
     ...DEFAULT_SCAN_CONFIG.roots,
     { path: "agents", kind: ScanRootKind.AgentFiles }
