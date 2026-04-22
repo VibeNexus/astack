@@ -191,7 +191,7 @@ function StatusRow({
         <StatusDot tone={meta.tone} />
         <span>{meta.label}</span>
       </div>
-      <div className="text-xs text-fg-secondary max-w-xl">{meta.detail}</div>
+      <div className="text-xs text-fg-secondary whitespace-nowrap">{meta.detail}</div>
       {state.status === HarnessStatus.SeedFailed && state.last_error && (
         <div className="text-xs text-error mt-1 font-mono break-all">
           {state.last_error}
@@ -370,25 +370,6 @@ function InstructionsBlock({
         <Button variant="ghost" onClick={copy}>
           Copy
         </Button>
-      </div>
-      <div
-        className="rounded border border-line-subtle/50 bg-base/40 px-2.5 py-2 space-y-1"
-        role="note"
-        aria-label="Prerequisite"
-      >
-        <div className="text-[11px] font-medium text-fg-secondary">
-          Prerequisite
-        </div>
-        <div className="text-[11px] text-fg-tertiary leading-relaxed">
-          <code className="font-mono">/init_harness</code> is a slash{" "}
-          <span className="font-medium">command</span> that must be subscribed
-          from a repo (e.g. <code className="font-mono">astack-skills</code>).
-          It is <span className="font-medium">not</span> bundled with astack.
-          If your AI tool says the command is unknown, go to the{" "}
-          <span className="font-medium">Subscriptions</span> tab and subscribe
-          to a command named <code className="font-mono">init_harness</code>{" "}
-          first.
-        </div>
       </div>
       <div className="text-[11px] text-fg-tertiary">
         Do not run the underlying shell script by hand — the slash command
