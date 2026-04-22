@@ -43,14 +43,32 @@ export async function runServerStart(): Promise<void> {
 }
 /* v8 ignore stop */
 
-export function runServerStop(): void {
+export async function runServerStop(): Promise<void> {
   const config = loadConfig();
+  const pid = readPidFile(config);
   const ok = stopDaemon(config);
   if (!ok) {
     printWarn("astack server is not running");
     process.exit(0);
   }
-  printOk("stop signal sent");
+
+  // Wait for the process to actually exit before returning.
+  // Without this, a rapid `stop && start` sees the old process still
+  // holding the port / pidfile and fails with "already running".
+  const TIMEOUT_MS = 5_000;
+  const POLL_MS = 100;
+  const deadline = Date.now() + TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    if (!isProcessAlive(pid!)) {
+      printOk("stop signal sent");
+      return;
+    }
+  }
+
+  // Timed out — process didn't die; warn and let the user handle it.
+  printWarn(`stop signal sent but process ${pid} still alive after ${TIMEOUT_MS / 1000}s`);
+  printWarn(`Force-kill with: kill -9 ${pid}`);
 }
 
 export async function runServerStatus(): Promise<void> {

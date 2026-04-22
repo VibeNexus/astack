@@ -191,3 +191,34 @@ export const ResolveResponseSchema = z.object({
   log: SyncLogSchema
 });
 export type ResolveResponse = z.infer<typeof ResolveResponseSchema>;
+
+// ---------- POST /api/projects/:id/resolve-batch ----------
+
+export const BatchResolveRequestSchema = z.object({
+  /**
+   * IDs of skills to resolve. Only skills actually in Conflict state
+   * are processed; others are silently skipped.
+   */
+  skill_ids: z.array(IdSchema).min(1),
+  strategy: ResolveStrategySchema,
+  /**
+   * When strategy = "manual", indicates all listed skills have been
+   * manually edited and are free of conflict markers.
+   */
+  manual_done: z.boolean().default(false)
+});
+export type BatchResolveRequest = z.infer<typeof BatchResolveRequestSchema>;
+
+export const BatchResolveResponseSchema = z.object({
+  resolved: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  outcomes: z.array(
+    z.object({
+      skill_id: IdSchema,
+      success: z.boolean(),
+      error: z.string().optional()
+    })
+  )
+});
+export type BatchResolveResponse = z.infer<typeof BatchResolveResponseSchema>;

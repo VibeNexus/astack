@@ -10,6 +10,7 @@ import {
   ProjectParamsSchema,
   PushRequestSchema,
   ResolveRequestSchema,
+  BatchResolveRequestSchema,
   SubscribeRequestSchema,
   SyncRequestSchema,
   UnsubscribeParamsSchema,
@@ -18,6 +19,7 @@ import {
   type SyncResponse,
   type SyncLog,
   type ResolveResponse,
+  type BatchResolveResponse,
   type UnsubscribeResponse,
   AstackError
 } from "@astack/shared";
@@ -265,6 +267,29 @@ export function subscriptionsRoutes(c: ServiceContainer): Hono {
         { manual_done: body.manual_done }
       );
       const response: ResolveResponse = { subscription, log };
+      return ctx.json(response);
+    }
+  );
+
+  // POST /api/projects/:id/resolve-batch — bulk-resolve conflicts.
+  //
+  // Best-effort: each skill is resolved independently; a single failure
+  // does not abort the batch. Only skills in Conflict state are processed;
+  // non-conflict skills are counted as skipped (not an error).
+  app.post(
+    "/:id/resolve-batch",
+    zValidator("param", ProjectParamsSchema),
+    zValidator("json", BatchResolveRequestSchema),
+    async (ctx) => {
+      const { id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
+      const result = await c.syncService.resolveBatch(
+        id,
+        body.skill_ids,
+        body.strategy,
+        { manual_done: body.manual_done }
+      );
+      const response: BatchResolveResponse = result;
       return ctx.json(response);
     }
   );

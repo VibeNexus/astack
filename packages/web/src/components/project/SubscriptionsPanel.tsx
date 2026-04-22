@@ -49,6 +49,11 @@ export interface SubscriptionsPanelProps {
   ) => Promise<ApplyResolutionsResult>;
   /** Opens the BrowseSkillsDrawer in the parent. */
   onBrowse: () => void;
+  /**
+   * Bulk-resolve all conflict subscriptions via use-remote strategy.
+   * Parent should call POST /resolve-batch and refresh status.
+   */
+  onResolveAllConflicts?: (skillIds: number[]) => Promise<void>;
 }
 
 export function SubscriptionsPanel({
@@ -58,13 +63,19 @@ export function SubscriptionsPanel({
   onUnsubscribe,
   onRescan,
   onBootstrapResolve,
-  onBrowse
+  onBrowse,
+  onResolveAllConflicts
 }: SubscriptionsPanelProps): React.JSX.Element {
   const [resolveOpen, setResolveOpen] = useState(false);
   const [rescanning, setRescanning] = useState(false);
+  const [resolvingAll, setResolvingAll] = useState(false);
   const subscriptions = status.subscriptions;
   const ambiguous = bootstrap?.ambiguous ?? [];
   const unmatched = bootstrap?.unmatched ?? [];
+
+  const conflictSkillIds = subscriptions
+    .filter((s) => s.state === "conflict")
+    .map((s) => s.skill.id);
 
   async function handleRescan(): Promise<void> {
     if (!onRescan || rescanning) return;
@@ -73,6 +84,16 @@ export function SubscriptionsPanel({
       await onRescan();
     } finally {
       setRescanning(false);
+    }
+  }
+
+  async function handleResolveAll(): Promise<void> {
+    if (!onResolveAllConflicts || resolvingAll || conflictSkillIds.length === 0) return;
+    setResolvingAll(true);
+    try {
+      await onResolveAllConflicts(conflictSkillIds);
+    } finally {
+      setResolvingAll(false);
     }
   }
 
@@ -86,6 +107,19 @@ export function SubscriptionsPanel({
           </span>
         </h2>
         <div className="flex items-center gap-2">
+          {onResolveAllConflicts && conflictSkillIds.length > 0 && (
+            <button
+              type="button"
+              onClick={handleResolveAll}
+              disabled={resolvingAll}
+              className="h-8 px-3 text-sm inline-flex items-center gap-1.5 rounded-md border border-line-subtle text-warn hover:text-fg-primary hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-accent/60 transition-colors duration-fast disabled:opacity-50 disabled:cursor-not-allowed"
+              title={`Resolve ${conflictSkillIds.length} conflict${conflictSkillIds.length === 1 ? "" : "s"} using upstream version`}
+            >
+              {resolvingAll
+                ? "Resolving…"
+                : `Use remote (${conflictSkillIds.length})`}
+            </button>
+          )}
           {onRescan && (
             <button
               type="button"
@@ -129,9 +163,9 @@ export function SubscriptionsPanel({
               <tr className="text-left text-fg-tertiary text-xs">
                 <th className="font-normal px-3 py-2 w-[140px]">State</th>
                 <th className="font-normal px-3 py-2">Skill</th>
-                <th className="font-normal px-3 py-2 w-[180px]">Repo</th>
+                <th className="font-normal px-3 py-2 w-[224px]">Repo</th>
                 <th className="font-normal px-3 py-2 w-[96px]">Version</th>
-                <th className="font-normal px-3 py-2 w-[120px]" />
+                <th className="font-normal px-3 py-2 w-[128px]" />
               </tr>
             </thead>
             <tbody>

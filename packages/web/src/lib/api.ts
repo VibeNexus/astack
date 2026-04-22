@@ -14,6 +14,8 @@ import {
   ErrorCode,
   type ApplyResolutionsResult,
   type AstackErrorBody,
+  type BatchResolveRequest,
+  type BatchResolveResponse,
   type BootstrapResolution,
   type CreateLinkedDirRequest,
   type CreateLinkedDirResponse,
@@ -54,21 +56,37 @@ export interface HealthResponse {
 async function request<T>(
   method: string,
   path: string,
-  body?: unknown
+  body?: unknown,
+  timeoutMs?: number
 ): Promise<T> {
+  const controller = timeoutMs != null ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null;
+
   let res: Response;
   try {
     res = await fetch(path, {
       method,
       headers: body ? { "content-type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller?.signal
     });
   } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new AstackError(
+        ErrorCode.SERVER_UNREACHABLE,
+        `Request timed out after ${(timeoutMs! / 1000).toFixed(0)}s. The operation may still be running server-side.`,
+        { path, method }
+      );
+    }
     throw new AstackError(
       ErrorCode.SERVER_UNREACHABLE,
       "Could not reach astack server. Run: astack server start",
       { error: err instanceof Error ? err.message : String(err) }
     );
+  } finally {
+    if (timer != null) clearTimeout(timer);
   }
 
   const text = await res.text();
@@ -179,7 +197,7 @@ export const api = {
       `/api/projects/${projectId}/subscriptions/${skillId}`
     ),
   sync: (projectId: number, force = false): Promise<SyncResponse> =>
-    request("POST", `/api/projects/${projectId}/sync`, { force }),
+    request("POST", `/api/projects/${projectId}/sync`, { force }, 5 * 60_000),
   push: (projectId: number): Promise<PushResponse> =>
     request("POST", `/api/projects/${projectId}/push`, {}),
   resolve: (
@@ -187,6 +205,11 @@ export const api = {
     body: ResolveRequest
   ): Promise<ResolveResponse> =>
     request("POST", `/api/projects/${projectId}/resolve`, body),
+  resolveBatch: (
+    projectId: number,
+    body: BatchResolveRequest
+  ): Promise<BatchResolveResponse> =>
+    request("POST", `/api/projects/${projectId}/resolve-batch`, body, 5 * 60_000),
 
   // Linked dirs
   createLinkedDir: (
@@ -213,7 +236,7 @@ export const api = {
   inspectBootstrap: (projectId: number): Promise<ProjectBootstrapResult> =>
     request("GET", `/api/projects/${projectId}/bootstrap`),
   scanBootstrap: (projectId: number): Promise<ScanAndAutoSubscribeResult> =>
-    request("POST", `/api/projects/${projectId}/bootstrap/scan`, {}),
+    request("POST", `/api/projects/${projectId}/bootstrap/scan`, {}, 3 * 60_000),
   resolveBootstrap: (
     projectId: number,
     resolutions: BootstrapResolution[]

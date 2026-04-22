@@ -368,6 +368,30 @@ export function ProjectDetailPage(): React.JSX.Element {
             await Promise.all([load(), loadBootstrap()]);
             return result;
           }}
+          onResolveAllConflicts={async (skillIds: number[]) => {
+            try {
+              const result = await api.resolveBatch(projectId, {
+                skill_ids: skillIds,
+                strategy: "use-remote"
+              });
+              await load();
+              if (result.errors > 0) {
+                toast.warn(
+                  `Resolved ${result.resolved}, ${result.errors} failed`,
+                  "Some skills could not be resolved — check individually."
+                );
+              } else {
+                toast.ok(
+                  `Resolved ${result.resolved} conflict${result.resolved === 1 ? "" : "s"} via use-remote`
+                );
+              }
+            } catch (err) {
+              toast.error(
+                "Batch resolve failed",
+                err instanceof Error ? err.message : String(err)
+              );
+            }
+          }}
         />
       </TabPanel>
 

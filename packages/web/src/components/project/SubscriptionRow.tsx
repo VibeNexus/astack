@@ -61,10 +61,16 @@ export function SubscriptionRow({
         ) : null}
       </td>
       <td className="px-3 py-2 align-middle text-xs text-fg-secondary">
-        <span className="inline-flex items-center gap-2">
-          {row.repo.name}
+        <span className="flex items-center gap-2 min-w-0">
+          <span className="truncate" title={row.repo.name}>
+            {row.repo.name}
+          </span>
           {row.repo.kind === "open-source" ? (
-            <Badge tone="warn" title="Open-source repo — pull only">
+            <Badge
+              tone="warn"
+              title="Open-source repo — pull only"
+              className="shrink-0 whitespace-nowrap"
+            >
               read-only
             </Badge>
           ) : null}

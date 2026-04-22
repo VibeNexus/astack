@@ -142,11 +142,16 @@ export class SyncService {
    * - Takes the per-repo lock.
    * - Computes 3-way state; if conflict, records a conflict log and throws.
    * - Otherwise copies upstream file/dir to working copy and logs success.
+   *
+   * `repoPulled` is an optional Set tracking which repo ids have already been
+   * git-pulled in the current batch. When provided, the git pull is skipped
+   * if the repo was already refreshed — avoids N redundant pulls for N skills
+   * from the same repo.
    */
   async pullOne(
     projectId: number,
     skillId: number,
-    opts: { force?: boolean } = {}
+    opts: { force?: boolean; repoPulled?: Set<number> } = {}
   ): Promise<SyncOutcome> {
     const project = this.deps.projects.mustFindById(projectId);
     const skill = this.mustFindSkill(skillId);
@@ -165,7 +170,13 @@ export class SyncService {
       // `opts.force` is reserved for future use (e.g. bypass local cache);
       // we keep it as a parameter for API parity but currently always pull.
       void opts.force;
-      await this.git.pull(repo.local_path);
+      // Skip git pull if this repo was already refreshed in this batch
+      // (repoPulled tracks repo ids, not skill ids).
+      const alreadyPulled = opts.repoPulled?.has(repo.id) ?? false;
+      if (!alreadyPulled) {
+        await this.git.pull(repo.local_path);
+        opts.repoPulled?.add(repo.id);
+      }
 
       const upstreamHead = await this.readRepoHead(repo);
       // Persist the refreshed HEAD back into SQLite so computeState sees
@@ -340,10 +351,14 @@ export class SyncService {
     let conflicts = 0;
     let errors = 0;
 
+    // Shared set so each repo is git-pulled at most once per batch.
+    const repoPulled = new Set<number>();
+
     for (const sub of targets) {
       try {
         const outcome = await this.pullOne(project.id, sub.skill_id, {
-          force: opts.force
+          force: opts.force,
+          repoPulled
         });
         outcomes.push(outcome);
 
@@ -605,13 +620,23 @@ export class SyncService {
     const repo = this.mustFindRepo(skill.repo_id);
 
     // Ensure there is actually an active conflict to resolve.
+    // Two valid cases:
+    //   1. Latest log row has status="conflict" (standard post-sync conflict)
+    //   2. No conflict log exists but computeState() reports Conflict —
+    //      this happens for v0.5 bootstrap-adopted skills that drifted from
+    //      upstream before any sync_logs row was written (base===null path).
     const latest = this.logs.latestForProjectSkill(projectId, skillId);
-    if (!latest || latest.status !== "conflict") {
-      throw new AstackError(
-        ErrorCode.NO_ACTIVE_CONFLICT,
-        "no active conflict to resolve",
-        { project_id: projectId, skill_id: skillId }
-      );
+    const hasConflictLog = latest?.status === "conflict";
+    if (!hasConflictLog) {
+      // Fall back to live computed state to catch the no-log-history case.
+      const computed = this.computeState(project, skill, repo, repo.head_hash ?? "");
+      if (computed.state !== SubscriptionState.Conflict) {
+        throw new AstackError(
+          ErrorCode.NO_ACTIVE_CONFLICT,
+          "no active conflict to resolve",
+          { project_id: projectId, skill_id: skillId }
+        );
+      }
     }
 
     // Open-source repos are pull-only: keep-local and manual both push.
@@ -676,7 +701,7 @@ export class SyncService {
         project_id: projectId,
         skill_id: skillId,
         direction: strategy === ResolveStrategy.UseRemote ? "pull" : "push",
-        from_version: latest.to_version ?? null,
+        from_version: latest?.to_version ?? null,
         to_version: newHead,
         status: "success",
         conflict_detail: `resolved via ${strategy}`,
@@ -692,6 +717,60 @@ export class SyncService {
       );
       return { subscription: sub, log };
     });
+  }
+
+  /**
+   * Batch-resolve conflicts for multiple (project, skill) pairs.
+   *
+   * Best-effort: individual failures do not abort the batch.
+   * Only skills that are actually in Conflict state are processed;
+   * non-conflict skills are silently skipped.
+   *
+   * Returns per-skill outcomes and aggregate counts.
+   */
+  async resolveBatch(
+    projectId: number,
+    skillIds: number[],
+    strategy: ResolveStrategyT,
+    opts: { manual_done?: boolean } = {}
+  ): Promise<{
+    resolved: number;
+    skipped: number;
+    errors: number;
+    outcomes: Array<{
+      skill_id: number;
+      success: boolean;
+      error?: string;
+    }>;
+  }> {
+    let resolved = 0;
+    let skipped = 0;
+    let errors = 0;
+    const outcomes: Array<{ skill_id: number; success: boolean; error?: string }> = [];
+
+    for (const skillId of skillIds) {
+      try {
+        await this.resolve(projectId, skillId, strategy, opts);
+        resolved++;
+        outcomes.push({ skill_id: skillId, success: true });
+      } catch (err) {
+        if (err instanceof AstackError && err.code === ErrorCode.NO_ACTIVE_CONFLICT) {
+          skipped++;
+          outcomes.push({ skill_id: skillId, success: false, error: "no active conflict" });
+        } else {
+          errors++;
+          const msg = err instanceof Error ? err.message : String(err);
+          this.deps.logger.warn("resolve_batch.skill_failed", {
+            project_id: projectId,
+            skill_id: skillId,
+            error: msg
+          });
+          outcomes.push({ skill_id: skillId, success: false, error: msg });
+        }
+      }
+    }
+
+    return { resolved, skipped, errors, outcomes };
   }
 
   // ---------- STATE / VIEW ----------
