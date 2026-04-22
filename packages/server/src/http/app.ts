@@ -198,6 +198,37 @@ export function createApp(opts: CreateAppOptions): AppInstance {
 
     // Serve assets first (long-cacheable) …
     app.use("/assets/*", serveStatic({ root: path.relative(process.cwd(), dashboardDir) }));
+    // … then the top-level static files Vite copies from packages/web/public
+    // into dist root (favicon.svg, apple-touch-icon.svg, etc.). Without this
+    // explicit route, the SPA fallback below would hand back index.html for
+    // /favicon.svg and the browser would try to parse HTML as SVG, producing
+    // a silently-broken tab icon in production.
+    const staticRootExtensions: Record<string, string> = {
+      ".svg": "image/svg+xml",
+      ".png": "image/png",
+      ".ico": "image/x-icon",
+      ".webmanifest": "application/manifest+json",
+      ".xml": "application/xml",
+      ".txt": "text/plain; charset=utf-8"
+    };
+    app.get("*", async (c, next) => {
+      const reqPath = c.req.path;
+      // Only match top-level single-segment files (e.g. "/favicon.svg").
+      // Anything nested is either /assets/* (already handled) or an SPA
+      // route that should fall through to index.html.
+      if (reqPath.indexOf("/", 1) !== -1) return next();
+      const ext = path.extname(reqPath).toLowerCase();
+      const contentType = staticRootExtensions[ext];
+      if (!contentType) return next();
+      const filePath = path.join(dashboardDir, path.basename(reqPath));
+      if (!fs.existsSync(filePath)) return next();
+      return c.body(fs.readFileSync(filePath), 200, {
+        "content-type": contentType,
+        // A day of caching is safe: favicons aren't content-hashed but
+        // change rarely, and Cmd-Shift-R still works for hard refreshes.
+        "cache-control": "public, max-age=86400"
+      });
+    });
     // … then fall back to index.html for any non-API GET so the SPA
     // router can handle deep links like /resolve/1/2.
     app.get("*", (c, next) => {

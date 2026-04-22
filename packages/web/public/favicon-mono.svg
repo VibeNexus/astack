@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Astack monochrome mask icon (Safari pinned tab).
+  Single color controlled by Safari via <link color="...">.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <path fill="black" fill-rule="evenodd" d="
+    M12 45 L32 53 L52 45 L32 37 Z
+    M14 36 L32 43.2 L50 36 L32 28.8 Z
+    M16 27 L32 33.4 L48 27 L32 20.6 Z
+  "/>
+  <path d="M26.4 30.2 L32 19.5 L37.6 30.2 M28.7 27.2 L35.3 27.2"
+        stroke="black" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" fill="none"/>
+</svg>

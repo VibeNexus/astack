@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Astack apple-touch-icon (180x180 canvas, scaled via viewBox).
+  Same composition as favicon.svg but with a bit more padding for iOS
+  home-screen rounded-corner crop. iOS auto-applies its own corner mask,
+  so the tile itself uses a flat fill.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
+  <rect width="180" height="180" fill="#0a0b0d"/>
+
+  <!-- Bottom layer -->
+  <path d="M42 128 L90 146 L138 128 L90 110 Z"
+        fill="rgba(61,214,140,0.14)"
+        stroke="rgba(61,214,140,0.35)"
+        stroke-width="3"
+        stroke-linejoin="round"/>
+
+  <!-- Middle layer -->
+  <path d="M47 108 L90 124.2 L133 108 L90 91.8 Z"
+        fill="rgba(61,214,140,0.22)"
+        stroke="rgba(61,214,140,0.6)"
+        stroke-width="3"
+        stroke-linejoin="round"/>
+
+  <!-- Top layer (solid accent) -->
+  <path d="M52 88 L90 102.4 L128 88 L90 73.6 Z"
+        fill="#3dd68c"
+        stroke="#3dd68c"
+        stroke-width="3"
+        stroke-linejoin="round"/>
+
+  <!-- "A" carved into the top layer -->
+  <path d="M76 95 L90 68 L104 95 M81.5 87.5 L98.5 87.5"
+        stroke="#0a0b0d"
+        stroke-width="5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"/>
+</svg>

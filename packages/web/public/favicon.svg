@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Astack favicon.
+  Design language: Graphite UI — "precision instrument, not a poster."
+    - Canvas: #0a0b0d (near-black base)
+    - Single accent: #3dd68c (pro-app green, state/brand)
+    - Concept: three stacked layers (a "stack"), with the top layer shaped
+      as an apex/"A" to signal the brand letter.
+    - Slight perspective skew reads as isometric layers without being
+      skeuomorphic.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Rounded dark canvas tile -->
+  <rect width="64" height="64" rx="14" fill="#0a0b0d"/>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" stroke="rgba(255,255,255,0.10)"/>
+
+  <!-- Bottom layer (lowest elevation, faintest) -->
+  <path d="M12 45 L32 53 L52 45 L32 37 Z"
+        fill="rgba(61,214,140,0.14)"
+        stroke="rgba(61,214,140,0.35)"
+        stroke-width="1.25"
+        stroke-linejoin="round"/>
+
+  <!-- Middle layer -->
+  <path d="M14 36 L32 43.2 L50 36 L32 28.8 Z"
+        fill="rgba(61,214,140,0.22)"
+        stroke="rgba(61,214,140,0.6)"
+        stroke-width="1.25"
+        stroke-linejoin="round"/>
+
+  <!-- Top layer: the "A" apex — solid accent, brightest -->
+  <path d="M16 27 L32 33.4 L48 27 L32 20.6 Z"
+        fill="#3dd68c"
+        stroke="#3dd68c"
+        stroke-width="1.25"
+        stroke-linejoin="round"/>
+
+  <!-- Letter A carved into the top layer (negative space) -->
+  <!-- Two diagonals meeting at apex + crossbar -->
+  <path d="M26.4 30.2 L32 19.5 L37.6 30.2 M28.7 27.2 L35.3 27.2"
+        stroke="#0a0b0d"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"/>
+</svg>
