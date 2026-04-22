@@ -94,28 +94,72 @@ function makeAmbiguous(
 // ---------- BootstrapBanner ----------
 
 describe("BootstrapBanner", () => {
-  it("renders nothing when ambiguousCount is 0", () => {
+  it("renders nothing when ambiguous list is empty", () => {
     const { container } = render(
-      <BootstrapBanner ambiguousCount={0} onResolve={() => {}} />
+      <BootstrapBanner ambiguous={[]} onResolve={() => {}} />
     );
     expect(container.firstChild).toBeNull();
   });
 
-  it("uses singular copy for 1 ambiguous skill", () => {
-    render(<BootstrapBanner ambiguousCount={1} onResolve={() => {}} />);
+  it("uses singular copy for 1 ambiguous skill and lists its name", () => {
+    render(
+      <BootstrapBanner
+        ambiguous={[makeAmbiguous("skill-creator")]}
+        onResolve={() => {}}
+      />
+    );
+    // Headline: singular, no "Resolve" / "needs your attention" copy.
     expect(
-      screen.getByText(/1 local skill needs your attention/i)
+      screen.getByText(/1 ambiguous local skill$/i)
     ).toBeInTheDocument();
+    // Ambiguous skill name is listed inline so the banner can't be
+    // confused with per-row Conflict rows.
+    expect(screen.getByText("skill-creator")).toBeInTheDocument();
+    // Button verb is "Pick repo", not "Resolve", to avoid colliding
+    // with the table row's [Resolve] button.
     expect(
-      screen.getByRole("button", { name: /Resolve \(1\)/ })
+      screen.getByRole("button", { name: /Pick repo \(1\)/ })
     ).toBeInTheDocument();
   });
 
   it("uses plural copy for 3 ambiguous skills", () => {
-    render(<BootstrapBanner ambiguousCount={3} onResolve={() => {}} />);
+    render(
+      <BootstrapBanner
+        ambiguous={[
+          makeAmbiguous("alpha"),
+          makeAmbiguous("beta"),
+          makeAmbiguous("gamma")
+        ]}
+        onResolve={() => {}}
+      />
+    );
     expect(
-      screen.getByText(/3 local skills need your attention/i)
+      screen.getByText(/3 ambiguous local skills$/i)
     ).toBeInTheDocument();
+    expect(screen.getByText("alpha")).toBeInTheDocument();
+    expect(screen.getByText("beta")).toBeInTheDocument();
+    expect(screen.getByText("gamma")).toBeInTheDocument();
+  });
+
+  it("caps the inline name list at 3 and collapses the rest into +N more", () => {
+    render(
+      <BootstrapBanner
+        ambiguous={[
+          makeAmbiguous("a"),
+          makeAmbiguous("b"),
+          makeAmbiguous("c"),
+          makeAmbiguous("d"),
+          makeAmbiguous("e")
+        ]}
+        onResolve={() => {}}
+      />
+    );
+    expect(screen.getByText("a")).toBeInTheDocument();
+    expect(screen.getByText("b")).toBeInTheDocument();
+    expect(screen.getByText("c")).toBeInTheDocument();
+    expect(screen.queryByText("d")).not.toBeInTheDocument();
+    expect(screen.queryByText("e")).not.toBeInTheDocument();
+    expect(screen.getByText(/\+2 more/)).toBeInTheDocument();
   });
 });
 
@@ -282,7 +326,13 @@ describe("SubscriptionsPanel — v0.5 integration", () => {
       }
     });
     expect(
-      screen.getByText(/1 local skill needs your attention/i)
+      screen.getByText(/1 ambiguous local skill$/i)
+    ).toBeInTheDocument();
+    // Banner's button must be "Pick repo", not "Resolve" — this is the
+    // guard against regressing into the old copy that collided with the
+    // table row's per-conflict [Resolve] button.
+    expect(
+      screen.getByRole("button", { name: /Pick repo \(1\)/ })
     ).toBeInTheDocument();
   });
 
@@ -314,6 +364,147 @@ describe("SubscriptionsPanel — v0.5 integration", () => {
     expect(
       screen.queryByRole("button", { name: /Re-scan local/i })
     ).not.toBeInTheDocument();
+  });
+
+  it("splits subscriptions into Skills / Commands / Agents groups with correct badges", () => {
+    const status: GetProjectStatusResponse = {
+      ...emptyStatus(),
+      subscriptions: [
+        {
+          skill: {
+            id: 1,
+            repo_id: 1,
+            type: "skill",
+            name: "code-simplifier",
+            path: "skills/code-simplifier",
+            description: null,
+            version: "abc1234",
+            updated_at: null
+          },
+          repo: {
+            id: 1,
+            name: "astack-skills",
+            git_url: "x",
+            kind: "custom",
+            status: "ready",
+            scan_config: null,
+            local_path: "/tmp/r",
+            head_hash: "abc1234",
+            last_synced: null,
+            created_at: "2026-04-20T00:00:00Z"
+          },
+          state: "synced"
+        },
+        {
+          skill: {
+            id: 2,
+            repo_id: 1,
+            type: "command",
+            name: "init_harness",
+            path: "commands/init_harness.md",
+            description: null,
+            version: "abc1234",
+            updated_at: null
+          },
+          repo: {
+            id: 1,
+            name: "astack-skills",
+            git_url: "x",
+            kind: "custom",
+            status: "ready",
+            scan_config: null,
+            local_path: "/tmp/r",
+            head_hash: "abc1234",
+            last_synced: null,
+            created_at: "2026-04-20T00:00:00Z"
+          },
+          state: "synced"
+        },
+        {
+          skill: {
+            id: 3,
+            repo_id: 1,
+            type: "agent",
+            name: "reviewer",
+            path: "agents/reviewer.md",
+            description: null,
+            version: "abc1234",
+            updated_at: null
+          },
+          repo: {
+            id: 1,
+            name: "astack-skills",
+            git_url: "x",
+            kind: "custom",
+            status: "ready",
+            scan_config: null,
+            local_path: "/tmp/r",
+            head_hash: "abc1234",
+            last_synced: null,
+            created_at: "2026-04-20T00:00:00Z"
+          },
+          state: "synced"
+        }
+      ]
+    };
+    mount({ status });
+
+    // Three group headings (regression guard against single-table regression).
+    const skillsGroup = screen.getByRole("region", { name: "Skills" });
+    const commandsGroup = screen.getByRole("region", { name: "Commands" });
+    const agentsGroup = screen.getByRole("region", { name: "Agents" });
+
+    // Each group owns exactly its own rows.
+    expect(within(skillsGroup).getByText("code-simplifier")).toBeInTheDocument();
+    expect(within(commandsGroup).getByText("init_harness")).toBeInTheDocument();
+    expect(within(agentsGroup).getByText("reviewer")).toBeInTheDocument();
+
+    // Badges are type-specific so rows stay self-identifying.
+    expect(within(skillsGroup).getByText("dir")).toBeInTheDocument();
+    expect(within(commandsGroup).getByText("cmd")).toBeInTheDocument();
+    expect(within(agentsGroup).getByText("agent")).toBeInTheDocument();
+
+    // Critical anti-regression: `init_harness` must NOT appear in the Skills
+    // group. That was the exact bug the v0.7 grouping fix is solving.
+    expect(within(skillsGroup).queryByText("init_harness")).not.toBeInTheDocument();
+  });
+
+  it("omits empty groups (no empty Commands / Agents tables shown)", () => {
+    const status: GetProjectStatusResponse = {
+      ...emptyStatus(),
+      subscriptions: [
+        {
+          skill: {
+            id: 1,
+            repo_id: 1,
+            type: "skill",
+            name: "only-one",
+            path: "skills/only-one",
+            description: null,
+            version: "abc1234",
+            updated_at: null
+          },
+          repo: {
+            id: 1,
+            name: "astack-skills",
+            git_url: "x",
+            kind: "custom",
+            status: "ready",
+            scan_config: null,
+            local_path: "/tmp/r",
+            head_hash: "abc1234",
+            last_synced: null,
+            created_at: "2026-04-20T00:00:00Z"
+          },
+          state: "synced"
+        }
+      ]
+    };
+    mount({ status });
+
+    expect(screen.getByRole("region", { name: "Skills" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Commands" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Agents" })).not.toBeInTheDocument();
   });
 
   it("keeps the within import referenced (parity with other test suites)", () => {

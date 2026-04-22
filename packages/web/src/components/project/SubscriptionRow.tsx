@@ -50,6 +50,8 @@ export function SubscriptionRow({
           {row.skill.name}
           {row.skill.type === "skill" ? (
             <Badge tone="neutral">dir</Badge>
+          ) : row.skill.type === "command" ? (
+            <Badge tone="neutral">cmd</Badge>
           ) : row.skill.type === "agent" ? (
             <Badge tone="neutral">agent</Badge>
           ) : null}

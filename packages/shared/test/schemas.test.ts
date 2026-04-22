@@ -142,7 +142,7 @@ describe("AstackEventSchema (SSE discriminated union)", () => {
   it("parses a well-formed hello event", () => {
     const msg = {
       type: EventType.Hello,
-      payload: { server_version: "0.1.0", seq: 0 }
+      payload: { server_version: "1.0.3", seq: 0 }
     };
     expect(AstackEventSchema.safeParse(msg).success).toBe(true);
   });

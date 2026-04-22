@@ -16,7 +16,7 @@ describe("ensureDaemonOnline", () => {
   it("returns health info on success", async () => {
     const fetchImpl = vi.fn(async () =>
       new Response(
-        JSON.stringify({ status: "ok", version: "0.1.0", uptime_ms: 100 }),
+        JSON.stringify({ status: "ok", version: "1.0.3", uptime_ms: 100 }),
         { status: 200 }
       )
     ) as unknown as typeof fetch;

@@ -48,7 +48,7 @@ describe("api client", () => {
   it("GET /health", async () => {
     const calls = mockFetch(() => ({
       status: 200,
-      body: { status: "ok", version: "0.1.0", uptime_ms: 10 }
+      body: { status: "ok", version: "1.0.3", uptime_ms: 10 }
     }));
     const h = await api.health();
     expect(h.status).toBe("ok");

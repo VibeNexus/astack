@@ -231,7 +231,13 @@ export const SeedCompletedPayloadSchema = z.object({
 export const HarnessChangedPayloadSchema = z.object({
   project_id: z.number().int().positive(),
   skill_id: z.string(),
-  status: z.enum(["installed", "drift", "missing", "seed_failed"]),
+  status: z.enum([
+    "installed",
+    "scaffold_incomplete",
+    "drift",
+    "missing",
+    "seed_failed"
+  ]),
   seeded_at: z.string().nullable().optional(),
   last_error: z.string().nullable().optional()
 });

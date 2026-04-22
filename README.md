@@ -8,7 +8,7 @@
 
 ## Status
 
-v0.1.0 — 规划完成，进入实现阶段。设计文档在 `docs/asset/design.md`（1002 行，35 个决策锁定）。
+v1.0.3 — 规划完成，进入实现阶段。设计文档在 `docs/asset/design.md`（1002 行，35 个决策锁定）。
 
 ## Architecture
 

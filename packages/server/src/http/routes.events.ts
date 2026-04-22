@@ -19,6 +19,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 
 import type { ServiceContainer } from "./container.js";
+import { VERSION } from "../version.js";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -34,7 +35,7 @@ export function eventsRoutes(c: ServiceContainer): Hono {
         data: JSON.stringify({
           type: EventType.Hello,
           payload: {
-            server_version: "0.1.0",
+            server_version: VERSION,
             seq: c.events.currentSeq()
           }
         })

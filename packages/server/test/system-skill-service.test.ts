@@ -16,7 +16,12 @@ import path from "node:path";
 import tmp from "tmp-promise";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 
-import { EventType, HarnessStatus, type AstackEvent } from "@astack/shared";
+import {
+  EventType,
+  HARNESS_SCAFFOLD_FILES,
+  HarnessStatus,
+  type AstackEvent
+} from "@astack/shared";
 
 import { openDatabase, type Db } from "../src/db/connection.js";
 import { EventBus, type EmittedEvent } from "../src/events.js";
@@ -36,8 +41,23 @@ interface TestCtx {
   projectId: number;
 }
 
+/**
+ * Create the full Harness governance scaffold (AGENTS.md + docs/**) so
+ * assertions that focus purely on the skill-level lifecycle (installed /
+ * drift / missing / seed_failed) don't accidentally fall through to
+ * `scaffold_incomplete` just because the test project is an empty dir.
+ * Tests that want to exercise scaffold detection skip this helper.
+ */
+function writeScaffoldFiles(projectDir: string): void {
+  for (const rel of HARNESS_SCAFFOLD_FILES) {
+    const abs = path.join(projectDir, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, `# ${rel}\n`);
+  }
+}
+
 async function makeCtx(
-  overrides: { primaryTool?: string } = {}
+  overrides: { primaryTool?: string; withScaffold?: boolean } = {}
 ): Promise<TestCtx> {
   const db = openDatabase({ path: ":memory:" });
   const events = new EventBus();
@@ -52,6 +72,13 @@ async function makeCtx(
   });
 
   const projectDir = await tmp.dir({ unsafeCleanup: true });
+  // Default: materialize the governance files so lifecycle tests see
+  // `installed` rather than `scaffold_incomplete`. Opt out via
+  // `withScaffold: false` when the test is specifically about scaffold
+  // detection.
+  if (overrides.withScaffold !== false) {
+    writeScaffoldFiles(projectDir.path);
+  }
   const project = projects.register({
     path: projectDir.path,
     primary_tool: overrides.primaryTool ?? ".claude"
@@ -261,6 +288,9 @@ describe("SystemSkillService — seedIfMissing (register path)", () => {
 
   it("seeds into an empty slot, writing stub + emitting event", async () => {
     const projectDir = await tmp.dir({ unsafeCleanup: true });
+    // Pre-materialize governance files so the post-seed state is
+    // unambiguously `installed` rather than `scaffold_incomplete`.
+    writeScaffoldFiles(projectDir.path);
     const db = openDatabase({ path: ":memory:" });
     const events = new EventBus();
     const emitted: EmittedEvent[] = [];
@@ -365,6 +395,112 @@ describe("SystemSkillService — concurrency", () => {
     // Final on-disk state is consistent.
     const final = await ctx.service.inspect(ctx.projectId, SKILL_ID);
     expect(final.status).toBe(HarnessStatus.Installed);
+  });
+});
+
+describe("SystemSkillService — scaffold detection", () => {
+  let ctx: TestCtx;
+  afterEach(async () => {
+    if (ctx) await teardown(ctx);
+  });
+
+  it("empty project post-seed reports scaffold_incomplete with every required file listed", async () => {
+    // makeCtx with withScaffold:false leaves the project as a bare dir;
+    // the subscriber still seeds the skill, so the skill-level state is
+    // clean. inspect() must therefore pick scaffold_incomplete.
+    ctx = await makeCtx({ withScaffold: false });
+
+    const state = await ctx.service.inspect(ctx.projectId, SKILL_ID);
+    expect(state.status).toBe(HarnessStatus.ScaffoldIncomplete);
+    expect(state.scaffold.complete).toBe(false);
+    expect(state.scaffold.files).toEqual([...HARNESS_SCAFFOLD_FILES]);
+    expect(state.scaffold.missing).toEqual([...HARNESS_SCAFFOLD_FILES]);
+  });
+
+  it("partial scaffold: missing[] lists only the files not yet materialized", async () => {
+    ctx = await makeCtx({ withScaffold: false });
+    // Create only AGENTS.md + docs/version/INDEX.md; the retro files
+    // and BOUNDARIES remain absent.
+    fs.writeFileSync(path.join(ctx.projectDir.path, "AGENTS.md"), "# agents\n");
+    fs.mkdirSync(path.join(ctx.projectDir.path, "docs", "version"), {
+      recursive: true
+    });
+    fs.writeFileSync(
+      path.join(ctx.projectDir.path, "docs", "version", "INDEX.md"),
+      "# index\n"
+    );
+
+    const state = await ctx.service.inspect(ctx.projectId, SKILL_ID);
+    expect(state.status).toBe(HarnessStatus.ScaffoldIncomplete);
+    expect(state.scaffold.missing).toEqual([
+      "docs/version/BOUNDARIES.md",
+      "docs/retro/golden-rules.md",
+      "docs/retro/patterns.md"
+    ]);
+  });
+
+  it("full scaffold + clean skill → installed with complete=true, missing=[]", async () => {
+    ctx = await makeCtx(); // default: scaffold files present
+    const state = await ctx.service.inspect(ctx.projectId, SKILL_ID);
+    expect(state.status).toBe(HarnessStatus.Installed);
+    expect(state.scaffold.complete).toBe(true);
+    expect(state.scaffold.missing).toEqual([]);
+  });
+
+  it("scaffold probe still reported when skill is in drift (both dimensions returned)", async () => {
+    ctx = await makeCtx({ withScaffold: false });
+    // Drift the skill dir.
+    const skillMd = path.join(
+      ctx.projectDir.path,
+      ".claude",
+      "skills",
+      SKILL_ID,
+      "SKILL.md"
+    );
+    fs.appendFileSync(skillMd, "\n<!-- user drift -->\n");
+
+    const state = await ctx.service.inspect(ctx.projectId, SKILL_ID);
+    // Skill-level trumps scaffold for the aggregated `status` field.
+    expect(state.status).toBe(HarnessStatus.Drift);
+    // But the scaffold diagnostic is still populated on the wire so the
+    // UI can show both problems at once.
+    expect(state.scaffold.complete).toBe(false);
+    expect(state.scaffold.missing.length).toBeGreaterThan(0);
+  });
+
+  it("re-seed into project without scaffold reports scaffold_incomplete (no false-positive installed)", async () => {
+    ctx = await makeCtx({ withScaffold: false });
+    // Force an explicit seed after register.
+    const state = await ctx.service.seed(ctx.projectId, SKILL_ID);
+    expect(state.status).toBe(HarnessStatus.ScaffoldIncomplete);
+    expect(state.scaffold.complete).toBe(false);
+  });
+
+  it("seed_failed keeps priority over scaffold state (last_error wins)", async () => {
+    ctx = await makeCtx({ withScaffold: false });
+    // Manually poison the stub so inspect reports seed_failed.
+    const stubPath = stubPathOf(ctx);
+    fs.mkdirSync(path.dirname(stubPath), { recursive: true });
+    fs.writeFileSync(
+      stubPath,
+      JSON.stringify({
+        version: 1,
+        seeded: {
+          [SKILL_ID]: {
+            seeded_at: "2026-04-20T21:00:00.000Z",
+            built_in_hash: "",
+            source_path: "",
+            last_error: "boom"
+          }
+        }
+      })
+    );
+
+    const state = await ctx.service.inspect(ctx.projectId, SKILL_ID);
+    expect(state.status).toBe(HarnessStatus.SeedFailed);
+    expect(state.last_error).toBe("boom");
+    // Scaffold still included in the payload.
+    expect(state.scaffold.files).toEqual([...HARNESS_SCAFFOLD_FILES]);
   });
 });
 

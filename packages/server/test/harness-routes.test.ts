@@ -15,7 +15,7 @@ import path from "node:path";
 import tmp from "tmp-promise";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { ErrorCode, EventType, HarnessStatus } from "@astack/shared";
+import { ErrorCode, EventType, HARNESS_SCAFFOLD_FILES, HarnessStatus } from "@astack/shared";
 
 import type { ServerConfig } from "../src/config.js";
 import { openDatabase, type Db } from "../src/db/connection.js";
@@ -71,6 +71,15 @@ describe("HTTP /api/projects/:id/harness", () => {
   beforeEach(async () => {
     dataDir = await tmp.dir({ unsafeCleanup: true });
     projectDir = await tmp.dir({ unsafeCleanup: true });
+    // Pre-materialize the Harness governance scaffold (AGENTS.md +
+    // docs/**) so skill-lifecycle assertions land on `installed` rather
+    // than `scaffold_incomplete`. Tests that specifically exercise
+    // scaffold detection override this inside the `it`.
+    for (const rel of HARNESS_SCAFFOLD_FILES) {
+      const abs = path.join(projectDir.path, rel);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      fs.writeFileSync(abs, `# ${rel}\n`);
+    }
     db = openDatabase({ path: ":memory:" });
     app = createApp({
       config: buildConfig(dataDir.path),
@@ -185,6 +194,35 @@ describe("HTTP /api/projects/:id/harness", () => {
       );
       expect(res.status).toBe(404);
       expect(res.json.code).toBe(ErrorCode.PROJECT_NOT_FOUND);
+    });
+
+    it("returns status=scaffold_incomplete when governance files are absent", async () => {
+      // Delete the scaffold files we pre-seeded in beforeEach to simulate
+      // a project where harness-init was seeded but /init_harness was
+      // never run.
+      for (const rel of HARNESS_SCAFFOLD_FILES) {
+        const abs = path.join(projectDir.path, rel);
+        fs.rmSync(abs, { force: true });
+      }
+      const res = await request<{
+        status: string;
+        scaffold: { complete: boolean; missing: string[]; files: string[] };
+      }>(app, "GET", `/api/projects/${projectId}/harness`);
+      expect(res.status).toBe(200);
+      expect(res.json.status).toBe(HarnessStatus.ScaffoldIncomplete);
+      expect(res.json.scaffold.complete).toBe(false);
+      expect(res.json.scaffold.missing).toEqual([...HARNESS_SCAFFOLD_FILES]);
+    });
+
+    it("payload includes scaffold.files + missing + complete even in installed state", async () => {
+      const res = await request<{
+        status: string;
+        scaffold: { complete: boolean; missing: string[]; files: string[] };
+      }>(app, "GET", `/api/projects/${projectId}/harness`);
+      expect(res.json.status).toBe(HarnessStatus.Installed);
+      expect(res.json.scaffold.complete).toBe(true);
+      expect(res.json.scaffold.missing).toEqual([]);
+      expect(res.json.scaffold.files).toEqual([...HARNESS_SCAFFOLD_FILES]);
     });
   });
 

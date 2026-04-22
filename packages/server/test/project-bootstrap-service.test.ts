@@ -349,6 +349,35 @@ describe("ProjectBootstrapService — scan (pure)", () => {
       )
     ).toBe(false);
   });
+
+  it("test 8b (v0.7 A1): seeded harness-init never appears as `unmatched` even when no repo ships it", async () => {
+    // Regression guard for the A1 rule: "Subscriptions UI must never
+    // show system-level skills". The scanner blacklist covers the
+    // polluted-repo case (test 8); this case covers the *natural* case
+    // where the seed dir is the only on-disk evidence. Without the
+    // blacklist, scanRepo would classify `.claude/skills/harness-init/`
+    // as unmatched and the UI would invite the user to "register a
+    // repo for this", which is wrong — it is an internal seed.
+    ctx = await makeCtx();
+    // No repo registration, no polluted skill insertion. Auto-seed
+    // ran during makeCtx() because SystemSkillService subscribed to
+    // project.registered, so .claude/skills/harness-init/ exists on disk.
+    expect(
+      fs.existsSync(
+        path.join(ctx.projectDir.path, ".claude/skills/harness-init")
+      )
+    ).toBe(true);
+
+    const result = await ctx.bootstrap.scan(ctx.projectId);
+
+    // The seed dir is tangible but must be invisible to bootstrap.
+    const allBuckets = [
+      ...result.matched,
+      ...result.ambiguous,
+      ...result.unmatched
+    ];
+    expect(allBuckets.some((e) => e.name === "harness-init")).toBe(false);
+  });
 });
 
 describe("ProjectBootstrapService — scanAndAutoSubscribe", () => {

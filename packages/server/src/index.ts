@@ -5,7 +5,7 @@
  * consume. Internal helpers are intentionally NOT re-exported here.
  */
 
-export const VERSION = "0.1.0";
+export { VERSION } from "./version.js";
 
 export { loadConfig, type ServerConfig } from "./config.js";
 export { createLogger, nullLogger, type Logger, type LogLevel } from "./logger.js";

@@ -1,11 +1,12 @@
 /**
- * Harness tab E2E (v0.4 PR6).
+ * Harness tab E2E (v0.4 PR6, v0.7 scaffold extension).
  *
  * Covers:
- *   1. installed happy path — empty project → register → Harness tab shows Installed
+ *   1. installed happy path — project with governance scaffold → register → Harness tab shows Installed
  *   2. drift overwrite     — modify seed file → Drift → Re-install → Installed restored
  *   3. legacy preserved    — pre-existing harness-init dir → not auto-overwritten on register
  *   4. polluted repo       — user repo with skills/harness-init/ → excluded from scan (A9)
+ *   5. scaffold incomplete — missing governance files → tab shows Scaffold incomplete + /init_harness hint
  */
 
 import {
@@ -22,11 +23,26 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { HARNESS_SCAFFOLD_FILES } from "@astack/shared";
+
 import {
   daemonUrl,
   registerProject,
   resetServerState
 } from "./fixtures/helpers.js";
+
+/**
+ * Create the Harness governance scaffold inside `projectDir` so the tab
+ * lands on `installed` after register — skipping this helper is the
+ * correct way to simulate "skill seeded but /init_harness never run".
+ */
+function writeScaffoldFiles(projectDir: string): void {
+  for (const rel of HARNESS_SCAFFOLD_FILES) {
+    const abs = path.join(projectDir, rel);
+    mkdirSync(path.dirname(abs), { recursive: true });
+    writeFileSync(abs, `# ${rel}\n`);
+  }
+}
 
 test.describe("harness tab — v0.4 system skill lifecycle", () => {
   let projectDir: string;
@@ -40,10 +56,11 @@ test.describe("harness tab — v0.4 system skill lifecycle", () => {
     if (projectDir) rmSync(projectDir, { recursive: true, force: true });
   });
 
-  test("fresh register auto-seeds → Harness tab shows Installed", async ({
+  test("fresh register + scaffold present → Harness tab shows Installed", async ({
     page,
     request
   }) => {
+    writeScaffoldFiles(projectDir);
     const project = await registerProject(request, projectDir);
     await page.goto(`/projects/${project.id}?tab=harness`);
 
@@ -65,10 +82,37 @@ test.describe("harness tab — v0.4 system skill lifecycle", () => {
     ).toBe(true);
   });
 
+  test("register without scaffold → Harness tab shows Scaffold incomplete and /init_harness hint", async ({
+    page,
+    request
+  }) => {
+    // Intentionally NOT calling writeScaffoldFiles — simulates a project
+    // that has only the seeded skill dir, but no AGENTS.md / docs/**.
+    const project = await registerProject(request, projectDir);
+    await page.goto(`/projects/${project.id}?tab=harness`);
+
+    await expect(page.getByText("Scaffold incomplete")).toBeVisible({
+      timeout: 5_000
+    });
+    // Missing files list surfaces at least the first required path.
+    await expect(page.getByText("AGENTS.md", { exact: true })).toBeVisible();
+    // Status detail mentions the slash command (not bash).
+    await expect(page.getByText(/\/init_harness/)).toBeVisible();
+
+    // Clicking "Show instructions" reveals the /init_harness block, NOT
+    // a raw shell command.
+    await page.getByRole("button", { name: /show instructions/i }).click();
+    await expect(page.getByText(/\/init_harness/).first()).toBeVisible();
+    await expect(page.getByText(/init-harness\.sh/i)).not.toBeVisible();
+  });
+
   test("drift detection + Re-install overwrite path", async ({
     page,
     request
   }) => {
+    // Provide the scaffold up-front so skill-level drift is the only
+    // transition this test needs to exercise.
+    writeScaffoldFiles(projectDir);
     const project = await registerProject(request, projectDir);
     const skillMd = path.join(
       projectDir,
@@ -123,6 +167,7 @@ test.describe("harness tab — v0.4 system skill lifecycle", () => {
     );
     mkdirSync(fakeDir, { recursive: true });
     writeFileSync(path.join(fakeDir, "SKILL.md"), "USER LEGACY CONTENT");
+    writeScaffoldFiles(projectDir);
 
     const project = await registerProject(request, projectDir);
     await page.goto(`/projects/${project.id}?tab=harness`);

@@ -32,7 +32,7 @@ describe("AstackClient", () => {
   it("health returns the JSON body", async () => {
     const fetchImpl = okFetch({
       status: "ok",
-      version: "0.1.0",
+      version: "1.0.3",
       uptime_ms: 123
     });
     const client = new AstackClient({ baseUrl, fetchImpl });
@@ -132,7 +132,7 @@ describe("AstackClient", () => {
 
   it("strips trailing slash from baseUrl", async () => {
     const cap: { method?: string; url?: string } = {};
-    const fetchImpl = okFetch({ status: "ok", version: "0.1.0", uptime_ms: 0 }, cap);
+    const fetchImpl = okFetch({ status: "ok", version: "1.0.3", uptime_ms: 0 }, cap);
     const client = new AstackClient({ baseUrl: `${baseUrl}/`, fetchImpl });
     await client.health();
     expect(cap.url).toBe(`${baseUrl}/health`);

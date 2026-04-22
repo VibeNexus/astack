@@ -53,7 +53,7 @@ export function Sidebar({ badges }: SidebarProps): React.JSX.Element {
             Astack
           </span>
           <span className="text-[11px] font-mono text-fg-quaternary">
-            v0.2
+            v{__APP_VERSION__}
           </span>
         </div>
         <ServerIndicator status={status} />

@@ -30,6 +30,7 @@ import { SubscriptionService } from "../services/subscription.js";
 import { SymlinkService } from "../services/symlink.js";
 import { SyncService } from "../services/sync.js";
 import { SystemSkillService } from "../system-skills/service.js";
+import { VERSION } from "../version.js";
 
 import type { ServiceContainer } from "./container.js";
 import { buildErrorHandler } from "./errors.js";
@@ -154,7 +155,7 @@ export function createApp(opts: CreateAppOptions): AppInstance {
   app.get("/health", (c) =>
     c.json({
       status: "ok",
-      version: "0.1.0",
+      version: VERSION,
       uptime_ms: Math.round(process.uptime() * 1000)
     })
   );
@@ -171,6 +172,30 @@ export function createApp(opts: CreateAppOptions): AppInstance {
   // and it bundles the compiled dashboard next to @astack/server.
   const dashboardDir = locateDashboard();
   if (dashboardDir) {
+    // v0.6 DX: log the dashboard bundle location + mtime on every server
+    // start. The most common "my code change didn't show up" bug is
+    // `astack server stop && start` WITHOUT first running the web build —
+    // the server still serves the old packages/web/dist. Surfacing the
+    // build timestamp in the daemon log makes that invisible coupling
+    // debuggable: compare this `mtime` against when you last edited the
+    // web source.
+    try {
+      const indexStat = fs.statSync(path.join(dashboardDir, "index.html"));
+      opts.logger.info("dashboard.serving", {
+        dir: dashboardDir,
+        index_mtime: indexStat.mtime.toISOString(),
+        // Human-friendly "built N seconds ago" nudge so the number in
+        // the log is interpretable at a glance without comparing
+        // timestamps by hand.
+        age_seconds: Math.round((Date.now() - indexStat.mtimeMs) / 1000)
+      });
+    } catch {
+      // Stat failure is non-fatal — we verified the path exists above
+      // in locateDashboard; a race where it disappears between calls is
+      // acceptable to swallow because the static route will 404
+      // cleanly for the user.
+    }
+
     // Serve assets first (long-cacheable) …
     app.use("/assets/*", serveStatic({ root: path.relative(process.cwd(), dashboardDir) }));
     // … then fall back to index.html for any non-API GET so the SPA
@@ -181,8 +206,19 @@ export function createApp(opts: CreateAppOptions): AppInstance {
       const indexPath = path.join(dashboardDir, "index.html");
       if (!fs.existsSync(indexPath)) return next();
       return c.body(fs.readFileSync(indexPath, "utf8"), 200, {
-        "content-type": "text/html; charset=utf-8"
+        "content-type": "text/html; charset=utf-8",
+        // Prevent browsers / proxies from caching the SPA shell. The
+        // `/assets/*` bundles are already content-hashed by Vite so
+        // they're safely immutable, but index.html itself MUST be
+        // revalidated each load — otherwise a stale index points at
+        // deleted asset filenames after rebuild and the app
+        // whitescreens until you hard-refresh.
+        "cache-control": "no-cache, no-store, must-revalidate"
       });
+    });
+  } else {
+    opts.logger.info("dashboard.missing", {
+      hint: "run `pnpm -C packages/web build` (or `pnpm dev:refresh`) to build the web bundle"
     });
   }
 

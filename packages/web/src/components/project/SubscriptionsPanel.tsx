@@ -5,7 +5,8 @@ import type {
   ApplyResolutionsResult,
   BootstrapResolution,
   GetProjectStatusResponse,
-  ProjectBootstrapResult
+  ProjectBootstrapResult,
+  SubscriptionWithState
 } from "@astack/shared";
 
 import { Card } from "../ui/index.js";
@@ -142,7 +143,7 @@ export function SubscriptionsPanel({
 
       {ambiguous.length > 0 && (
         <BootstrapBanner
-          ambiguousCount={ambiguous.length}
+          ambiguous={ambiguous}
           onResolve={() => setResolveOpen(true)}
         />
       )}
@@ -157,29 +158,11 @@ export function SubscriptionsPanel({
           <EmptyState onBrowse={onBrowse} />
         )
       ) : (
-        <Card className="p-0 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-fg-tertiary text-xs">
-                <th className="font-normal px-3 py-2 w-[140px]">State</th>
-                <th className="font-normal px-3 py-2">Skill</th>
-                <th className="font-normal px-3 py-2 w-[224px]">Repo</th>
-                <th className="font-normal px-3 py-2 w-[96px]">Version</th>
-                <th className="font-normal px-3 py-2 w-[128px]" />
-              </tr>
-            </thead>
-            <tbody>
-              {subscriptions.map((s) => (
-                <SubscriptionRow
-                  key={s.skill.id}
-                  row={s}
-                  projectId={projectId}
-                  onUnsubscribe={onUnsubscribe}
-                />
-              ))}
-            </tbody>
-          </table>
-        </Card>
+        <SubscriptionGroups
+          subscriptions={subscriptions}
+          projectId={projectId}
+          onUnsubscribe={onUnsubscribe}
+        />
       )}
 
       {onBootstrapResolve && (
@@ -265,5 +248,124 @@ function UnmatchedEmptyState({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Subscriptions table, grouped by `skill.type` so commands, skills, and
+ * agents don't render in one indistinguishable list.
+ *
+ * Rationale (v0.7 fix):
+ *   Users were confused when commands (e.g. `init_harness`, `code_review`,
+ *   `dev`, `mr`, `spec`) appeared in the same table as skills (e.g.
+ *   `code-simplifier`, `iwiki`). The old row renderer only showed a `dir`
+ *   badge for skills and a `agent` badge for agents — commands had no
+ *   badge, making them visually indistinguishable from skills on scan.
+ *
+ * Grouping + per-group headings makes the mental model explicit:
+ *   - Skills (N)   — directory-packaged skills (dir badge)
+ *   - Commands (N) — single-file slash commands (cmd badge)
+ *   - Agents (N)   — single-file subagents (agent badge)
+ *
+ * Empty groups are omitted entirely. Row-level badges are still rendered
+ * as a defense-in-depth so a row remains self-identifying if it ever
+ * escapes its grouping.
+ */
+function SubscriptionGroups({
+  subscriptions,
+  projectId,
+  onUnsubscribe
+}: {
+  subscriptions: SubscriptionWithState[];
+  projectId: number;
+  onUnsubscribe: (skillId: number) => void | Promise<void>;
+}): React.JSX.Element {
+  const skills = subscriptions.filter((s) => s.skill.type === "skill");
+  const commands = subscriptions.filter((s) => s.skill.type === "command");
+  const agents = subscriptions.filter((s) => s.skill.type === "agent");
+
+  return (
+    <div className="space-y-4">
+      {skills.length > 0 && (
+        <SubscriptionGroup
+          title="Skills"
+          description="Directory-packaged skills with a SKILL.md manifest."
+          rows={skills}
+          projectId={projectId}
+          onUnsubscribe={onUnsubscribe}
+        />
+      )}
+      {commands.length > 0 && (
+        <SubscriptionGroup
+          title="Commands"
+          description="Single-file slash commands invoked from the AI chat (e.g. /init_harness)."
+          rows={commands}
+          projectId={projectId}
+          onUnsubscribe={onUnsubscribe}
+        />
+      )}
+      {agents.length > 0 && (
+        <SubscriptionGroup
+          title="Agents"
+          description="Single-file autonomous subagents."
+          rows={agents}
+          projectId={projectId}
+          onUnsubscribe={onUnsubscribe}
+        />
+      )}
+    </div>
+  );
+}
+
+function SubscriptionGroup({
+  title,
+  description,
+  rows,
+  projectId,
+  onUnsubscribe
+}: {
+  title: string;
+  description: string;
+  rows: SubscriptionWithState[];
+  projectId: number;
+  onUnsubscribe: (skillId: number) => void | Promise<void>;
+}): React.JSX.Element {
+  return (
+    <section aria-label={title} className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-medium text-fg-secondary">
+          {title}
+          <span className="ml-2 text-xs text-fg-tertiary tabular">
+            {rows.length}
+          </span>
+        </h3>
+        <span className="text-xs text-fg-tertiary max-w-[60ch] truncate">
+          {description}
+        </span>
+      </div>
+      <Card className="p-0 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-fg-tertiary text-xs">
+              <th className="font-normal px-3 py-2 w-[140px]">State</th>
+              <th className="font-normal px-3 py-2">{title.replace(/s$/, "")}</th>
+              <th className="font-normal px-3 py-2 w-[224px]">Repo</th>
+              <th className="font-normal px-3 py-2 w-[96px]">Version</th>
+              <th className="font-normal px-3 py-2 w-[128px]" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => (
+              <SubscriptionRow
+                key={s.skill.id}
+                row={s}
+                projectId={projectId}
+                onUnsubscribe={onUnsubscribe}
+              />
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </section>
   );
 }

@@ -415,24 +415,75 @@ export interface SystemSkill {
 }
 
 /**
- * Installation state of a system skill in a project.
+ * Installation state of a system skill + its governance scaffold in a project.
  *
- *   - "installed"   — seed dir exists and its hash matches the built-in version
- *   - "drift"       — seed dir exists but hash differs (user modified it);
- *                     will be overwritten on next Re-install
- *   - "missing"     — seed dir not present (project never seeded, or deleted)
- *   - "seed_failed" — last seed attempt threw; stub.last_error has details
+ *   - "installed"           — seed dir matches built-in AND every required
+ *                             governance file exists under the project root
+ *                             (see `HARNESS_SCAFFOLD_FILES`). Harness is
+ *                             ready to drive /spec /dev /code_review etc.
+ *   - "scaffold_incomplete" — seed dir is fine, but one or more governance
+ *                             files are missing. The user still needs to
+ *                             run `/init_harness` in the AI tool chat to
+ *                             materialize AGENTS.md + docs/version/ + docs/retro/.
+ *   - "drift"               — seed dir exists but its hash differs from the
+ *                             built-in version (user modified it); will be
+ *                             overwritten on the next Re-install.
+ *   - "missing"             — seed dir not present (project never seeded,
+ *                             or deleted).
+ *   - "seed_failed"         — last seed attempt threw; `stub.last_error`
+ *                             has details.
  *
- * Built-in version is the source of truth — drift is not a conflict,
- * just a notice. See v0.4 spec §A2.
+ * Built-in skill is the source of truth — drift is not a conflict, just a
+ * notice. The scaffold side is orthogonal: a clean skill seed with an
+ * empty `docs/` tree still reports `scaffold_incomplete` until the
+ * governance files exist. See v0.4 spec §A2 (extended by v0.7).
+ *
+ * Ordering when multiple conditions hold: seed_failed > missing > drift >
+ * scaffold_incomplete > installed. This matches the UI's "worst first"
+ * principle — the user sees the most actionable issue on top.
  */
 export const HarnessStatus = {
   Installed: "installed",
+  ScaffoldIncomplete: "scaffold_incomplete",
   Drift: "drift",
   Missing: "missing",
   SeedFailed: "seed_failed"
 } as const;
 export type HarnessStatus = (typeof HarnessStatus)[keyof typeof HarnessStatus];
+
+/**
+ * Governance scaffold files required for Harness to be considered
+ * "initialized" at the project level. Paths are POSIX-relative to the
+ * project root. Drives `ProjectHarnessScaffoldState.missing` detection
+ * on the server and the missing-files list on the Web UI.
+ *
+ * Keep this list in sync with `system-skills/harness-init/templates/*`
+ * — every template rendered by `init-harness.sh` must have a matching
+ * entry here.
+ */
+export const HARNESS_SCAFFOLD_FILES: readonly string[] = [
+  "AGENTS.md",
+  "docs/version/INDEX.md",
+  "docs/version/BOUNDARIES.md",
+  "docs/retro/golden-rules.md",
+  "docs/retro/patterns.md"
+];
+
+/**
+ * Governance scaffold probe result for a project.
+ *
+ *   - `files`    : full list of required paths (mirrors
+ *                  `HARNESS_SCAFFOLD_FILES`, copied onto the wire so
+ *                  older clients can still render a diff against whatever
+ *                  the server currently requires).
+ *   - `missing`  : subset of `files` not found on disk.
+ *   - `complete` : convenience boolean; `missing.length === 0`.
+ */
+export interface ProjectHarnessScaffoldState {
+  files: string[];
+  missing: string[];
+  complete: boolean;
+}
 
 /**
  * Per-project view of a system skill's installation state.
@@ -446,6 +497,8 @@ export type HarnessStatus = (typeof HarnessStatus)[keyof typeof HarnessStatus];
  *   - `actual_hash` is the live hash of the seed dir, only non-null when
  *     status is `drift` (useful diagnostics for users).
  *   - `last_error` only populated when status === 'seed_failed'.
+ *   - `scaffold`  reports the governance-file check; drives the
+ *     `scaffold_incomplete` status (§v0.7).
  */
 export interface ProjectHarnessState {
   project_id: Id;
@@ -455,6 +508,7 @@ export interface ProjectHarnessState {
   stub_built_in_hash: string | null;
   actual_hash: string | null;
   last_error: string | null;
+  scaffold: ProjectHarnessScaffoldState;
 }
 
 // ---------- Project bootstrap (v0.5) ----------

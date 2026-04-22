@@ -24,7 +24,7 @@ describe("App routing", () => {
             ? { repos: [], total: 0 }
             : url.includes("/api/projects")
               ? { projects: [], total: 0 }
-              : { status: "ok", version: "0.1.0", uptime_ms: 1 }
+              : { status: "ok", version: "1.0.3", uptime_ms: 1 }
         ),
         { status: 200 }
       );

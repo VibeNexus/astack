@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -9,9 +12,21 @@ const daemonPort = process.env.ASTACK_E2E_PORT
   : 7432;
 const daemonTarget = `http://127.0.0.1:${daemonPort}`;
 
+// Inject the web package's version at build time so the UI brand tag
+// (Sidebar.tsx → `v${__APP_VERSION__}`) is always in sync with the
+// published package.json — no hand-maintained literal that drifts.
+// Must be mirrored in vitest.config.ts for unit tests.
+const pkgUrl = new URL("./package.json", import.meta.url);
+const pkg = JSON.parse(readFileSync(fileURLToPath(pkgUrl), "utf8")) as {
+  version: string;
+};
+
 // See docs/asset/design.md § Pass 6 for responsive/keyboard requirements.
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version)
+  },
   server: {
     host: "127.0.0.1",
     port: 5173,

@@ -39,6 +39,7 @@ import { runStatus } from "./commands/status.js";
 import { runSubscribe } from "./commands/subscribe.js";
 import { runSync } from "./commands/sync.js";
 import { printErr } from "./output.js";
+import { VERSION } from "./version.js";
 
 async function wrap(
   fn: () => Promise<void> | void,
@@ -65,7 +66,7 @@ const program = new Command();
 program
   .name("astack")
   .description("AI Harness System — manage Claude/Cursor/CodeBuddy skills across projects")
-  .version("0.1.0");
+  .version(VERSION);
 
 // ---------- init ----------
 program
