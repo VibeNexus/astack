@@ -16,7 +16,7 @@ export function NotFoundPage(): React.JSX.Element {
         to="/"
         className="inline-block text-sm text-accent hover:underline mt-4"
       >
-        ← back to Sync Status
+        ← back to Dashboard
       </Link>
     </div>
   );
