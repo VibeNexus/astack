@@ -11,6 +11,7 @@ import type { EventBus } from "../events.js";
 import type { LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
 import type { GitignoreGuardService } from "../services/gitignore-guard.js";
+import type { LocalSkillService } from "../services/local-skill.js";
 import type { ProjectBootstrapService } from "../services/project-bootstrap.js";
 import type { ProjectService } from "../services/project.js";
 import type { RepoService } from "../services/repo.js";
@@ -33,6 +34,8 @@ export interface ServiceContainer {
   systemSkillService: SystemSkillService;
   /** v0.5 — see spec §3 / PR3. */
   projectBootstrapService: ProjectBootstrapService;
+  /** v0.7 — LocalSkill domain (see docs/version/v0.7-local-skills.md §1.5). */
+  localSkillService: LocalSkillService;
   /**
    * Auto-appends `.astack/` and `.astack.json` to the project root
    * `.gitignore` on project registration. No public routes — the

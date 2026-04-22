@@ -13,3 +13,4 @@ export * from "./events.js";
 export * from "./fs.js";
 export * from "./harness.js";
 export * from "./bootstrap.js";
+export * from "./local-skills.js";

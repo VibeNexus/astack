@@ -24,6 +24,7 @@ import { EventBus } from "../events.js";
 import { LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
 import { GitignoreGuardService } from "../services/gitignore-guard.js";
+import { LocalSkillService } from "../services/local-skill.js";
 import { ProjectBootstrapService } from "../services/project-bootstrap.js";
 import { ProjectService } from "../services/project.js";
 import { RepoService } from "../services/repo.js";
@@ -38,6 +39,7 @@ import { buildErrorHandler } from "./errors.js";
 import { eventsRoutes } from "./routes.events.js";
 import { fsRoutes } from "./routes.fs.js";
 import { linksRoutes } from "./routes.links.js";
+import { localSkillsRoutes } from "./routes.local-skills.js";
 import { projectsRoutes } from "./routes.projects.js";
 import { reposRoutes } from "./routes.repos.js";
 import { subscriptionsRoutes } from "./routes.subscriptions.js";
@@ -135,6 +137,22 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     systemSkills: systemSkillService
   });
 
+  // v0.7: LocalSkillService — depends on projects + subscriptions, and
+  // (for `suggestFromUnmatched`) a late-bound reference to
+  // ProjectBootstrapService. Mirrors the `systemSkillServiceRef`
+  // pattern above: we want a cycle-free constructor but still let
+  // LocalSkillService.suggestFromUnmatched call into bootstrap.scan
+  // once everything is wired. See docs/version/v0.7-local-skills.md §1.5.
+  const localSkillService = new LocalSkillService({
+    db,
+    events,
+    logger: opts.logger,
+    locks,
+    projects: projectService,
+    subscriptions: subscriptionService,
+    getBootstrapService: () => projectBootstrapService
+  });
+
   // Gitignore guard: self-contained subscriber that auto-appends
   // `.astack/` + `.astack.json` to the project root `.gitignore` when a
   // new project is registered. Construct last so any earlier subscriber
@@ -161,6 +179,7 @@ export function createApp(opts: CreateAppOptions): AppInstance {
     syncService,
     systemSkillService,
     projectBootstrapService,
+    localSkillService,
     gitignoreGuardService
   };
 
@@ -179,6 +198,7 @@ export function createApp(opts: CreateAppOptions): AppInstance {
   app.route("/api/projects", projectsRoutes(container));
   app.route("/api/projects", subscriptionsRoutes(container));
   app.route("/api/projects", linksRoutes(container));
+  app.route("/api/projects", localSkillsRoutes(container));
   app.route("/api/fs", fsRoutes(container));
   app.route("/api", eventsRoutes(container));
 
