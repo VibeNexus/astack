@@ -39,6 +39,11 @@ v0.1.0 — 规划完成，进入实现阶段。设计文档在 `docs/asset/desig
 
 守卫已加在 `astack-server start`：版本不符会立即退出并打印升级指引，不会出现模糊的 `node:sqlite not found` 错误。
 
+## Storage layout & safety
+
+- **`~/.astack/repos/<repo>/` 是只读镜像**。open-source 类型仓库（`kind=open-source`）由 daemon 按 `origin/HEAD` 自动同步维护；**手工修改会在下次 sync / resolve 时被 `git reset --hard` 覆盖**（v0.6 起自愈机制，脏态会发出 `repo.mirror_reset` SSE 事件 + warn 日志）。所有订阅的实际 working copy 在 `<project>/.claude/skills/<skill>/` 的 symlink 目标——要改 skill 请通过订阅路径，或直接在 `kind=custom` 的可写仓库里改。
+- **`~/.astack/daemon.log`**（v0.6 起实装）：daemon 运行日志 tee 到此文件（同时仍输出 stderr），`astack server logs` / `tail -f ~/.astack/daemon.log` 可查看。
+
 ## Development
 
 ```bash

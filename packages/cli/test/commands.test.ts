@@ -138,10 +138,12 @@ describe("CLI command functions", () => {
       lockFile: path.join(dataDir.path, "daemon.lock")
     };
     handle = await startDaemon(config, {
-      debug: () => {},
-      info: () => {},
-      warn: () => {},
-      error: () => {}
+      logger: {
+        debug: () => {},
+        info: () => {},
+        warn: () => {},
+        error: () => {}
+      }
     });
     baseUrl = `http://127.0.0.1:${port}`;
     bare = await createBareRepoWithCommand();

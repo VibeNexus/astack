@@ -3,6 +3,28 @@
 > 每个迭代的范围边界，防止跨迭代的范围蔓延。由 `/spec` 命令自动维护。
 > spec_review 评审时作为迭代边界遵守（A3）的评审基准。
 
+## v0.6 — Open-source 镜像卫生 + Resolve 路径自愈 + 日志落盘
+
+**本迭代做：**
+- `SyncService.ensureMirrorClean(repo)` 私有方法：对 `kind=open-source` 仓库 pull 前 `isClean()` 探测；脏态则 `git reset --hard origin/HEAD` 自愈 + `sync.mirror_reset` warn 日志 + `repo.mirror_reset` SSE；`kind=custom` 仓库 short-circuit 不自愈（见 A1）；`isClean()` 自身抛错原样冒泡不尝试 reset（P1-2）
+- 插入点：`sync.ts` **2 处** `git.pull` 之前（`pullOne (sync.ts:177)` / `resolve (sync.ts:670)`）；**不插入** `pushOne (sync.ts:471)`（该路径只对 custom 仓库触达，dirty 是 push 流程合法中间态）；**不插入** `pullBatchUnderLock`（不直接调 pull，通过 `pullOne` 间接触达，由 `repoPulled` Set 去重）；**不改** `services/repo.ts::refresh (repo.ts:285)` 既有 skip+warn 语义
+- `git.ts` 新增 `gitResetHard(localPath, ref)`；`SyncServiceDeps.gitImpl` 扩 `isClean?` / `resetHard?` optional（保持向后兼容，测试 double 不必改）
+- 新 SSE 事件 `repo.mirror_reset`，payload `{ repo_id, repo_name, repo_kind: "open-source", reason: "dirty_working_tree" }`；`RepoMirrorResetPayloadSchema` Zod 定义在 `shared/schemas/events.ts`
+- `BatchResolveResponseSchema` outcomes 元素扩 `error_code?` + `error_detail?` 两个 optional 字段（R3 原子：schema 扩 + `resolveBatch` 组装点同 PR）；前端 `ProjectDetailPage::onResolveAllConflicts` toast 展开首 3 条 `error_detail`
+- `logger.ts::createLogger(minLevel, stream | stream[])` 扩签名为单 stream 或多 stream（向后兼容）；`daemon.ts::startDaemon` 移除外部 `logger` 参数、内部打开 `config.logFile` WritableStream 并构造 tee logger；`DaemonHandle` 新增 `logger` 字段；`handle.close()` 尾部 `logFileStream.end()`；`cli/commands/server.ts::runServerStart` 改用 `handle.logger`
+- 按 5 个 PR 切分（PR1 自愈核心 + SSE schema 原子 / PR2 error_detail 穿透 R3 原子 / PR3 前端 toast / PR4 日志落盘（独立，可并行）/ PR5 文档 + retro 沉淀）
+- 测试覆盖：5 个 ensureMirrorClean 用例（open-source 脏自愈 / custom 脏不自愈 / open-source clean no-op / resetHard 失败冒泡 / isClean 自身抛错冒泡）+ 1 pullOne batch `repoPulled` 去重 + 1 resolve-batch outcomes 带 error_code/error_detail + 1 daemon.log 含 daemon.started + 1 前端 toast 展开
+
+**本迭代不做（延后到 v0.7+）：**
+- CLI `astack mirror doctor` 主动健康检查所有镜像（价值次级）
+- 把 pull / push 路径所有错误结构化到前端（仅 resolve-batch 的 outcomes 聚合层有此损耗，单条路径走 AstackError 已够用）
+- daemon.log 轮转（logrotate / size-based rotation；保留策略单独讨论）
+- 修改 `services/repo.ts::refresh` 现有的 "skip + warn" 语义（refresh 的语义对用户调试友好，不强制改自愈）
+- Scanner / subscribe 路径加相同镜像护栏（它们不调 `git.pull`，不受脏态影响）
+- 为 `resetHard` 行为开 safety switch（open-source 镜像 dirty 本身异常，不留 escape hatch）
+- CLI `astack subscribe` / `astack sync` batch 失败展开错误（CLI 是 streaming，问题只在 Web toast 聚合层）
+- Tee logger 加异步 queue / back-pressure（单用户本地日志，无需过度工程化）
+
 ## v0.5 — Subscription Bootstrap for Legacy Projects
 
 **本迭代做：**

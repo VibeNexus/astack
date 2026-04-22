@@ -9,8 +9,11 @@
  *       ~/.astack/daemon.lock
  *
  * This module provides:
- *   - startDaemon(config, logger) — bind + serve + write pid/lock; returns
- *     a handle with .close() for graceful shutdown.
+ *   - startDaemon(config, opts?) — bind + serve + write pid/lock; returns
+ *     a handle with .close() for graceful shutdown. v0.6: the logger is
+ *     now constructed internally (teeing stderr + config.logFile) and
+ *     exposed on the returned handle as `handle.logger`; callers no
+ *     longer pass one in.
  *   - readPidFile / isProcessAlive — used by `astack server status/stop`.
  *   - stopDaemon(config) — SIGTERM the process from PID file.
  *
@@ -27,13 +30,20 @@ import { AstackError, ErrorCode } from "@astack/shared";
 import type { ServerConfig } from "./config.js";
 import { openDatabase } from "./db/connection.js";
 import { createApp, type AppInstance } from "./http/app.js";
-import type { Logger } from "./logger.js";
+import { createLogger, type Logger, type LogLevel } from "./logger.js";
 import { SeedService } from "./services/seed.js";
 
 export interface DaemonHandle {
   config: ServerConfig;
   app: AppInstance;
   server: ServerType;
+  /**
+   * The logger constructed by `startDaemon` — tees `process.stderr` and
+   * `config.logFile`. Exposed so CLI callers (e.g. `runServerStart`) can
+   * hand the same logger to `installSignalHandlers` without re-opening
+   * the log file. v0.6+.
+   */
+  logger: Logger;
   close(): Promise<void>;
 }
 
@@ -44,11 +54,22 @@ export interface StartDaemonOptions {
    * `git clone` of the builtin seeds.
    */
   seeds?: boolean;
+  /**
+   * Log level for the internally-constructed tee logger. Defaults to
+   * "info". v0.6+.
+   */
+  logLevel?: LogLevel;
+  /**
+   * Override the internally-constructed tee logger. Primarily for tests
+   * that want `nullLogger()` (no file I/O, no stderr noise). Production
+   * daemon never sets this — it relies on the automatic
+   * `config.logFile` + `process.stderr` tee. v0.6+.
+   */
+  logger?: Logger;
 }
 
 export async function startDaemon(
   config: ServerConfig,
-  logger: Logger,
   opts: StartDaemonOptions = {}
 ): Promise<DaemonHandle> {
   ensureDataDir(config);
@@ -70,6 +91,22 @@ export async function startDaemon(
       "another daemon is already running",
       { pid: existingPid, pid_file: config.pidFile }
     );
+  }
+
+  // v0.6: build the tee logger internally. Production path opens
+  // `config.logFile` in append mode and writes to both stderr + file;
+  // tests can override via `opts.logger` (typically `nullLogger()`).
+  let logFileStream: fs.WriteStream | null = null;
+  let logger: Logger;
+  if (opts.logger) {
+    logger = opts.logger;
+  } else {
+    fs.mkdirSync(path.dirname(config.logFile), { recursive: true });
+    logFileStream = fs.createWriteStream(config.logFile, { flags: "a" });
+    logger = createLogger(opts.logLevel ?? "info", [
+      process.stderr,
+      logFileStream
+    ]);
   }
 
   const db = openDatabase({ path: config.dbPath });
@@ -115,6 +152,7 @@ export async function startDaemon(
     config,
     app,
     server,
+    logger,
     close: async () => {
       // 1. Tell long-lived SSE handlers to bail out of their while loops.
       //    Without this, server.close() would wait indefinitely for the
@@ -146,6 +184,14 @@ export async function startDaemon(
       app.dispose();
       removePidFile(config);
       logger.info("daemon.stopped", { pid: process.pid });
+
+      // v0.6: close the log file stream (if we opened one) so the next
+      // daemon start on the same logFile doesn't race on an open fd.
+      if (logFileStream !== null) {
+        await new Promise<void>((resolve) => {
+          logFileStream!.end(() => resolve());
+        });
+      }
     }
   };
 

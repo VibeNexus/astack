@@ -38,6 +38,18 @@ export const EventType = {
   RepoRegistered: "repo.registered",
   RepoRefreshed: "repo.refreshed",
   RepoRemoved: "repo.removed",
+  /**
+   * Astack auto-healed a dirty open-source mirror by resetting it to
+   * `origin/HEAD` (v0.6). Emitted from `SyncService.ensureMirrorClean`
+   * only when an actual reset was performed — no event for clean mirrors.
+   *
+   * Payload carries `repo_id`, `repo_name`, `repo_kind` ("open-source"),
+   * and `reason` (currently only "dirty_working_tree"). Reserved for a
+   * future "mirror health" dashboard; not directly consumed by the current
+   * Web UI (the reset is already surfaced via warn log + batch outcome
+   * `error_detail` when reset fails).
+   */
+  RepoMirrorReset: "repo.mirror_reset",
 
   // Project lifecycle
   ProjectRegistered: "project.registered",
@@ -124,6 +136,24 @@ export const RepoRefreshedPayloadSchema = z.object({
 
 export const RepoRemovedPayloadSchema = z.object({
   repo_id: z.number().int().positive()
+});
+
+/**
+ * RepoMirrorReset: an open-source mirror was dirty and Astack reset it
+ * back to `origin/HEAD` to unblock the pending pull/resolve (v0.6).
+ *
+ * Only `kind=open-source` mirrors are auto-healed; `custom` repos never
+ * emit this event because dirty working trees there may be legitimate
+ * push-flow intermediate state. The reason enum leaves room for future
+ * triggers (e.g. `"detached_head"`) without a schema bump.
+ */
+export const RepoMirrorResetPayloadSchema = z.object({
+  repo_id: z.number().int().positive(),
+  repo_name: z.string().min(1),
+  /** Only open-source mirrors are auto-healed; reserved as literal. */
+  repo_kind: z.literal("open-source"),
+  /** Future-proof enum; today only `dirty_working_tree` fires. */
+  reason: z.enum(["dirty_working_tree"])
 });
 
 export const ProjectRegisteredPayloadSchema = z.object({
@@ -260,6 +290,10 @@ export const AstackEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(EventType.RepoRemoved),
     payload: RepoRemovedPayloadSchema
+  }),
+  z.object({
+    type: z.literal(EventType.RepoMirrorReset),
+    payload: RepoMirrorResetPayloadSchema
   }),
   z.object({
     type: z.literal(EventType.ProjectRegistered),

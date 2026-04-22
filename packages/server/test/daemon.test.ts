@@ -107,7 +107,10 @@ describe("startDaemon", () => {
 
   it("binds the port, writes pidfile, and serves /health", async () => {
     const cfg = buildConfig(dir.path, port);
-    const handle = await startDaemon(cfg, nullLogger(), { seeds: false });
+    const handle = await startDaemon(cfg, {
+      seeds: false,
+      logger: nullLogger()
+    });
     try {
       expect(readPidFile(cfg)).toBe(process.pid);
       expect(await isPortInUse("127.0.0.1", port)).toBe(true);
@@ -124,15 +127,47 @@ describe("startDaemon", () => {
 
   it("refuses to start when port is already in use", async () => {
     const cfg = buildConfig(dir.path, port);
-    const handle = await startDaemon(cfg, nullLogger(), { seeds: false });
+    const handle = await startDaemon(cfg, {
+      seeds: false,
+      logger: nullLogger()
+    });
     try {
       await expect(
-        startDaemon(cfg, nullLogger(), { seeds: false })
+        startDaemon(cfg, { seeds: false, logger: nullLogger() })
       ).rejects.toMatchObject({
         code: "SERVER_ALREADY_RUNNING"
       });
     } finally {
       await handle.close();
     }
+  });
+
+  // v0.6 — daemon.log actually gets written
+  //
+  // Pre-v0.6, `createLogger` only wrote to process.stderr and
+  // `config.logFile` was an unfulfilled promise in the config shape —
+  // `astack server logs` always said "no log file yet". Verify the fix:
+  // when `startDaemon` is called without an explicit `opts.logger`, it
+  // auto-opens `config.logFile` in append mode and tees it with stderr.
+  it("v0.6: writes daemon.started to config.logFile when no logger override is passed", async () => {
+    const cfg = buildConfig(dir.path, port);
+    const handle = await startDaemon(cfg, { seeds: false });
+    try {
+      // Give the startup callback a moment to flush to the stream.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fs.existsSync(cfg.logFile)).toBe(true);
+      const content = fs.readFileSync(cfg.logFile, "utf8");
+      expect(content).toContain("daemon.started");
+      expect(content).toContain(`pid=${process.pid}`);
+    } finally {
+      await handle.close();
+    }
+    // After close(), the log file stream was ended — a subsequent
+    // startDaemon on the same config should succeed without EBUSY-like
+    // errors (append mode also tolerates this, but the end() call makes
+    // the handoff deterministic). Skip a full re-start here to keep the
+    // test fast; just assert the stopped line was written post-close.
+    const afterClose = fs.readFileSync(cfg.logFile, "utf8");
+    expect(afterClose).toContain("daemon.stopped");
   });
 });

@@ -10,7 +10,6 @@ import fs from "node:fs";
 
 import { AstackError, ErrorCode } from "@astack/shared";
 import {
-  createLogger,
   installSignalHandlers,
   isPortInUse,
   isProcessAlive,
@@ -25,10 +24,13 @@ import { print, printErr, printInfo, printOk, printWarn } from "../output.js";
 /* v8 ignore start */
 export async function runServerStart(): Promise<void> {
   const config = loadConfig();
-  const logger = createLogger("info");
   try {
-    const handle = await startDaemon(config, logger);
-    installSignalHandlers(handle, logger);
+    // v0.6: startDaemon constructs its own tee logger (stderr +
+    // config.logFile) and returns it on handle.logger; pass that same
+    // logger to installSignalHandlers so shutdown logs land in the
+    // same file as everything else.
+    const handle = await startDaemon(config);
+    installSignalHandlers(handle, handle.logger);
     printOk(
       `astack-server listening on http://${config.host}:${config.port}`
     );

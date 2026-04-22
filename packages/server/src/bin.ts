@@ -32,7 +32,6 @@ import {
   startDaemon,
   stopDaemon
 } from "./daemon.js";
-import { createLogger } from "./logger.js";
 
 /**
  * Parse a node version string like `v22.13.0` or `24.14.1`. Exported
@@ -126,14 +125,16 @@ function printUsage(): void {
 }
 
 async function cmdStart(config: ServerConfig): Promise<void> {
-  const logger = createLogger("info");
   // Respected by E2E harness (packages/web/e2e/fixtures/start-server.mjs) to
   // prevent real git clones of BUILTIN_SEEDS during smoke tests. Unset in
   // production — users want the seeded repos.
   const seedsDisabled = process.env.ASTACK_DISABLE_SEEDS === "1";
   try {
-    const handle = await startDaemon(config, logger, { seeds: !seedsDisabled });
-    installSignalHandlers(handle, logger);
+    // v0.6: startDaemon constructs its own tee logger (stderr + config.logFile)
+    // and exposes it via handle.logger; we hand that to installSignalHandlers
+    // so SIGTERM/SIGINT logs land in the same file as everything else.
+    const handle = await startDaemon(config, { seeds: !seedsDisabled });
+    installSignalHandlers(handle, handle.logger);
     process.stdout.write(
       `astack-server listening on http://${config.host}:${config.port}\n`
     );

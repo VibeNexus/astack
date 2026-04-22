@@ -74,11 +74,62 @@ Spec 中任何"复用现有 X"的描述（SSE 事件类型、scanner 配置、Se
 
 ---
 
-### 跨层契约规则
+#### R6 · 跨 Service 的同类 git 操作必须复用同一护栏或显式声明放行
 
-（待积累）
+> 关联反模式：P6
+
+同一个 git 操作（`git.pull` / `git.push` / `git.reset` 等）如果在 Service A 的某条路径上已有**脏态守门 / 自愈 / 锁**等护栏，则 Service B 调用相同 git 操作时**必须复用该护栏**，或在代码里**显式声明**"B 场景允许这种状态"（不仅仅在 spec 里口头说）。不允许"A 防了 B 没防"。
+
+**机制：**
+- 新增一个跨 Service 共享的私有方法（如 `SyncService.ensureMirrorClean`），在每个需要该护栏的调用点之前统一触发，而不是复制粘贴 `if (isClean) ...` 到每条路径
+- 若某条路径确实可以放行（例如 `pushOne` 对 custom 仓库路径，脏态是 commit+push 合法中间态），必须在该方法内部以"early return + 注释说明原因"的形式显式记录，让下一个改这条路径的人知道"这里放行不是漏了"
+- 对不同 `kind`（`open-source` / `custom`）做路径差异化时，差异化逻辑集中在护栏方法里，不要把"某路径只对某种 kind 生效"散布到各调用点
+- Code review 时对任何 `git.pull / git.push / git.reset` 新增或挪动调用必须问"这条路径有没有 A 已经建起的护栏该复用"
+
+**反例：** v0.6 前 `services/repo.ts::refresh` 对 `open-source` 仓库有 `isClean` 跳过守门，而 `SyncService.pullOne` 与 `SyncService.resolve` 同样对 `open-source` 仓库裸调 `git.pull` —— 一次手工脏镜像静默卡住同一镜像上所有订阅的 pull / resolve。v0.6 PR1 引入 `ensureMirrorClean` 在 pull 前统一自愈解决此对称性。
 
 ---
+
+### 跨层契约规则
+
+#### R7 · Batch / bulk API 的 outcomes 元素必须带 error_code + error_detail，聚合计数不是契约
+
+> 关联反模式：P7
+
+一个返回"每项独立成败"的 batch/bulk HTTP 或 Service 方法（如 `resolveBatch` / `subscribeBatch` / `applyResolutions`），其 `outcomes[]` 元素**必须**同时暴露：
+1. 人类可读的 `error?: string`（已有基线）
+2. 结构化机器可读的 `error_code?: string`（来自 `AstackError.code` 枚举）
+3. 原始技术细节 `error_detail?: string`（如 `AstackError.details.git_stderr` / stack head）
+
+上层的 `errors: number` / `failed: number` 聚合计数字段**不构成足够的错误契约**——前端必须能不追加一次 REST 调用就向用户展示"第一条失败的具体原因"。
+
+**机制：**
+- Batch 路径的 writer 在 catch 里同步抽取三个字段（`AstackError` 实例走 `code` + `details.git_stderr` / `details.skill_name` 等结构化键；非 `AstackError` 走 `undefined` fallback 保持可序列化）
+- `BatchXxxResponseSchema.outcomes` 的 Zod 定义把 `error_code` / `error_detail` 声明为 `.optional()`（兼容只带 `error` 的老消费方），前端代码里优先 `error_detail > error > 通用文案` 逐级降级
+- 评审 checklist：任何新增 batch API，若 response 只有 `{ success, error }` 二元组就是违规——哪怕第一版用户看不到 detail，字段位置也要先留好，否则后续扩张是 schema breaking change
+
+**反例：** v0.6 前 `BatchResolveResponse.outcomes` 元素只有 `{ skill_id, success, error? }`；`resolve-all-conflicts` 点击后 38 条失败的 toast 只能显示"Resolved 0, 38 failed"，用户无法判断究竟是"本地 drift + upstream 也动"还是"镜像脏态"还是"skill 被删"——需要额外 `GET /api/sync-logs/:repo_id?limit=1` 一跳才能定位。v0.6 PR2 + PR3 同时扩 schema + UI 展开首 3 条 `error_detail` 闭环。
+
+---
+
+### Spec 设计规则（续）
+
+#### R5 · 代码引用必须 `函数名:行号` 双锚点
+
+> 关联反模式：P5
+
+Spec 中引用现有代码位置（如 "`sync.ts:471` 的 pull"）时，必须同时标注**所在函数名**和**行号**两个锚点；仅行号会在文件内邻近函数间张冠李戴（尤其是 500+ 行的 service 文件，多个 `async fooOne() { await this.git.pull(...) }` 模式会出现在不同函数中）。
+
+**机制：**
+- 写 spec 时对每个行号引用执行两步验证：① 行号对应的语句确实是想引用的调用 ② 该行所在的最近 `async methodName(` 声明与 spec 描述的函数名一致
+- 引用格式统一为 `functionName (file.ts:line)` 而非 `file.ts:line`
+- 批量引用时加一张锚点表（"所有 `git.pull` 调用点：`pullOne (sync.ts:177)` / `pushOne (sync.ts:471)` / `resolve (sync.ts:670)`"）
+
+**反例：** v0.6-mirror-hygiene §1.4 把 `sync.ts:471` 标注为 "`pullBatchUnderLock` 的内层 pull"；实际该行位于 `pushOne` 内部，`pullBatchUnderLock` 通过 `pullOne` 间接 pull。后续 `ensureMirrorClean` 会被插到错误函数，还会为 custom 仓库 push 流程的合法 commit+push 中间态引入误 reset
+
+---
+
+
 
 ## 归档规则
 

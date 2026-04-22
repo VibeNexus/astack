@@ -9,13 +9,17 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  AstackError,
   ErrorCode,
   EventType,
   ResolveStrategy,
   SkillType,
   SubscriptionState
 } from "@astack/shared";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { nullLogger } from "../src/logger.js";
+import { SyncService, type SyncServiceDeps } from "../src/services/sync.js";
 
 import { createHarness, type Harness } from "./helpers/harness.js";
 
@@ -559,6 +563,492 @@ describe("SyncService", () => {
       ).rejects.toMatchObject({
         code: ErrorCode.REPO_READONLY
       });
+    });
+  });
+
+  // ---------- v0.6 ensureMirrorClean (open-source mirror self-heal) ----------
+  //
+  // These tests drive SyncService via a mocked gitImpl so we can precisely
+  // control `isClean` / `resetHard` / `pull` / `remoteHead` return values
+  // without spinning up a dirty git working tree. Repo + project + skill
+  // rows are still created via the real harness so the subscription /
+  // sync-log machinery exercises the real code path.
+
+  describe("ensureMirrorClean (v0.6)", () => {
+    /**
+     * Build a SyncService whose gitImpl is fully mocked, sharing the
+     * harness's DB / events / subscriptions / project services so SQLite
+     * rows & conflict-state reads behave normally.
+     */
+    function makeSyncWithMock(
+      gitImpl: NonNullable<SyncServiceDeps["gitImpl"]>
+    ): SyncService {
+      return new SyncService({
+        db: h.db,
+        events: h.events,
+        logger: nullLogger(),
+        locks: h.locks,
+        projects: h.projectService,
+        subscriptions: h.subscriptionService,
+        gitAuthor: { name: "Test", email: "test@example.com" },
+        gitImpl
+      });
+    }
+
+    async function seedOpenSourceConflict(): Promise<{
+      projectId: number;
+      skillId: number;
+      projectPath: string;
+    }> {
+      await h.bare.addCommitPush("commands/code_review.md", "v1\n", "init");
+      const { repo } = await h.repoService.register({
+        git_url: h.bare.url,
+        kind: "open-source"
+      });
+      const project = h.projectService.register({ path: h.projectDir.path });
+      const skill = h.repoService
+        .listSkills(repo.id)
+        .find((s) => s.name === "code_review")!;
+      h.subscriptionService.subscribe(project.id, "code_review");
+
+      // Materialise working copy, then induce a conflict so resolve() has
+      // something legitimate to resolve.
+      await h.syncService.pullOne(project.id, skill.id);
+      writeWorking(s(project.id), "commands/code_review.md", "local edit\n");
+      await h.bare.addCommitPush(
+        "commands/code_review.md",
+        "remote edit\n",
+        "remote bump"
+      );
+      await expect(
+        h.syncService.pullOne(project.id, skill.id)
+      ).rejects.toMatchObject({ code: ErrorCode.CONFLICT_DETECTED });
+
+      return {
+        projectId: project.id,
+        skillId: skill.id,
+        projectPath: h.projectDir.path
+      };
+    }
+
+    /** Project path is constant across the harness; helper to satisfy writeWorking. */
+    function s(_projectId: number): string {
+      return h.projectDir.path;
+    }
+
+    async function seedOpenSourceNoConflict(): Promise<{
+      projectId: number;
+      skillId: number;
+    }> {
+      await h.bare.addCommitPush("commands/code_review.md", "v1\n", "init");
+      const { repo } = await h.repoService.register({
+        git_url: h.bare.url,
+        kind: "open-source"
+      });
+      const project = h.projectService.register({ path: h.projectDir.path });
+      const skill = h.repoService
+        .listSkills(repo.id)
+        .find((s) => s.name === "code_review")!;
+      h.subscriptionService.subscribe(project.id, "code_review");
+      return { projectId: project.id, skillId: skill.id };
+    }
+
+    async function seedCustomConflict(): Promise<{
+      projectId: number;
+      skillId: number;
+      projectPath: string;
+    }> {
+      await h.bare.addCommitPush("commands/code_review.md", "v1\n", "init");
+      // Default kind = custom.
+      const { repo } = await h.repoService.register({ git_url: h.bare.url });
+      const project = h.projectService.register({ path: h.projectDir.path });
+      const skill = h.repoService
+        .listSkills(repo.id)
+        .find((s) => s.name === "code_review")!;
+      h.subscriptionService.subscribe(project.id, "code_review");
+      await h.syncService.pullOne(project.id, skill.id);
+      writeWorking(s(project.id), "commands/code_review.md", "local edit\n");
+      await h.bare.addCommitPush(
+        "commands/code_review.md",
+        "remote edit\n",
+        "remote bump"
+      );
+      await expect(
+        h.syncService.pullOne(project.id, skill.id)
+      ).rejects.toMatchObject({ code: ErrorCode.CONFLICT_DETECTED });
+      return {
+        projectId: project.id,
+        skillId: skill.id,
+        projectPath: h.projectDir.path
+      };
+    }
+
+    it("resets dirty open-source mirror and emits repo.mirror_reset (use-remote resolve)", async () => {
+      const seed = await seedOpenSourceConflict();
+
+      const isClean = vi.fn().mockResolvedValue(false);
+      const remoteHead = vi
+        .fn()
+        .mockResolvedValue("abcdef0123456789abcdef0123456789abcdef01");
+      const resetHard = vi.fn().mockResolvedValue(undefined);
+      const pull = vi.fn().mockResolvedValue(undefined);
+      const commitAndPush = vi.fn().mockResolvedValue("deadbeef");
+
+      const sync = makeSyncWithMock({
+        pull,
+        commitAndPush,
+        isClean,
+        remoteHead,
+        resetHard
+      });
+
+      h.emitted.length = 0;
+      const res = await sync.resolve(
+        seed.projectId,
+        seed.skillId,
+        ResolveStrategy.UseRemote
+      );
+
+      expect(res.subscription.state).toBe(SubscriptionState.Synced);
+      expect(isClean).toHaveBeenCalledTimes(1);
+      expect(remoteHead).toHaveBeenCalledTimes(1);
+      expect(resetHard).toHaveBeenCalledTimes(1);
+      expect(resetHard).toHaveBeenCalledWith(expect.any(String), "origin/HEAD");
+      expect(pull).toHaveBeenCalledTimes(1);
+
+      // Mirror reset SSE + payload shape sanity.
+      const resetEvents = h.emitted.filter(
+        (e) => e.event.type === EventType.RepoMirrorReset
+      );
+      expect(resetEvents).toHaveLength(1);
+      expect(resetEvents[0]?.event.payload).toMatchObject({
+        repo_kind: "open-source",
+        reason: "dirty_working_tree"
+      });
+    });
+
+    it("custom repo: ensureMirrorClean is a no-op — git.pull sees dirty state raw", async () => {
+      const seed = await seedCustomConflict();
+
+      const isClean = vi.fn().mockResolvedValue(false);
+      const remoteHead = vi.fn().mockResolvedValue("");
+      const resetHard = vi.fn().mockResolvedValue(undefined);
+      const pull = vi.fn().mockRejectedValue(
+        new AstackError(ErrorCode.REPO_GIT_FAILED, "git pull failed", {
+          git_stderr:
+            "Your local changes would be overwritten by merge: commands/code_review.md"
+        })
+      );
+      const commitAndPush = vi.fn().mockResolvedValue("deadbeef");
+
+      const sync = makeSyncWithMock({
+        pull,
+        commitAndPush,
+        isClean,
+        remoteHead,
+        resetHard
+      });
+
+      // Assert on what resolve() actually throws — not on the mock's own
+      // rejected value. Covers two invariants in one assertion:
+      //   1. the error code bubbles unwrapped (REPO_GIT_FAILED)
+      //   2. git_stderr is preserved through the custom-repo no-op path
+      //      (ensureMirrorClean didn't swallow or rewrap it)
+      await expect(
+        sync.resolve(seed.projectId, seed.skillId, ResolveStrategy.UseRemote)
+      ).rejects.toMatchObject({
+        code: ErrorCode.REPO_GIT_FAILED,
+        details: {
+          git_stderr: expect.stringContaining("local changes would be overwritten")
+        }
+      });
+
+      // Key invariants: custom early-returns in ensureMirrorClean, so none
+      // of the heal-path mocks were invoked; git.pull ran exactly once and
+      // its raw error bubbled intact.
+      expect(isClean).not.toHaveBeenCalled();
+      expect(remoteHead).not.toHaveBeenCalled();
+      expect(resetHard).not.toHaveBeenCalled();
+      expect(pull).toHaveBeenCalledTimes(1);
+    });
+
+    it("clean open-source mirror: isClean=true → no reset, no SSE, no warn", async () => {
+      const seed = await seedOpenSourceConflict();
+
+      const isClean = vi.fn().mockResolvedValue(true);
+      const remoteHead = vi.fn().mockResolvedValue("unused");
+      const resetHard = vi.fn().mockResolvedValue(undefined);
+      const pull = vi.fn().mockResolvedValue(undefined);
+      const commitAndPush = vi.fn().mockResolvedValue("deadbeef");
+
+      const sync = makeSyncWithMock({
+        pull,
+        commitAndPush,
+        isClean,
+        remoteHead,
+        resetHard
+      });
+
+      h.emitted.length = 0;
+      await sync.resolve(
+        seed.projectId,
+        seed.skillId,
+        ResolveStrategy.UseRemote
+      );
+
+      expect(isClean).toHaveBeenCalledTimes(1);
+      expect(remoteHead).not.toHaveBeenCalled();
+      expect(resetHard).not.toHaveBeenCalled();
+      expect(pull).toHaveBeenCalledTimes(1);
+      expect(
+        h.emitted.some((e) => e.event.type === EventType.RepoMirrorReset)
+      ).toBe(false);
+    });
+
+    it("resetHard throw bubbles as REPO_GIT_FAILED with git_stderr intact", async () => {
+      const seed = await seedOpenSourceConflict();
+
+      const isClean = vi.fn().mockResolvedValue(false);
+      const remoteHead = vi
+        .fn()
+        .mockResolvedValue("abcdef0123456789abcdef0123456789abcdef01");
+      const resetHard = vi.fn().mockRejectedValue(
+        new AstackError(ErrorCode.REPO_GIT_FAILED, "git reset --hard failed", {
+          local_path: "/tmp/fake",
+          ref: "origin/HEAD",
+          git_stderr: "fatal: ambiguous argument 'origin/HEAD'"
+        })
+      );
+      const pull = vi.fn().mockResolvedValue(undefined);
+      const commitAndPush = vi.fn().mockResolvedValue("deadbeef");
+
+      const sync = makeSyncWithMock({
+        pull,
+        commitAndPush,
+        isClean,
+        remoteHead,
+        resetHard
+      });
+
+      await expect(
+        sync.resolve(seed.projectId, seed.skillId, ResolveStrategy.UseRemote)
+      ).rejects.toMatchObject({
+        code: ErrorCode.REPO_GIT_FAILED,
+        details: {
+          git_stderr: expect.stringContaining("ambiguous argument")
+        }
+      });
+      // pull NEVER runs when the reset itself fails.
+      expect(pull).not.toHaveBeenCalled();
+    });
+
+    it("isClean throw bubbles (simulates .git corruption) — no resetHard attempted", async () => {
+      const seed = await seedOpenSourceConflict();
+
+      const isClean = vi.fn().mockRejectedValue(
+        new AstackError(ErrorCode.REPO_GIT_FAILED, "git status failed", {
+          local_path: "/tmp/fake",
+          git_stderr: "fatal: not a git repository"
+        })
+      );
+      const remoteHead = vi.fn().mockResolvedValue("unused");
+      const resetHard = vi.fn().mockResolvedValue(undefined);
+      const pull = vi.fn().mockResolvedValue(undefined);
+      const commitAndPush = vi.fn().mockResolvedValue("deadbeef");
+
+      const sync = makeSyncWithMock({
+        pull,
+        commitAndPush,
+        isClean,
+        remoteHead,
+        resetHard
+      });
+
+      await expect(
+        sync.resolve(seed.projectId, seed.skillId, ResolveStrategy.UseRemote)
+      ).rejects.toMatchObject({
+        code: ErrorCode.REPO_GIT_FAILED,
+        details: {
+          git_stderr: expect.stringContaining("not a git repository")
+        }
+      });
+      expect(resetHard).not.toHaveBeenCalled();
+      expect(pull).not.toHaveBeenCalled();
+    });
+
+    it("pullOne batch dedupe: multiple skills in one repo trigger at most ONE ensureMirrorClean + git.pull", async () => {
+      // Seed two commands in the same open-source repo.
+      await h.bare.addCommitPush("commands/a.md", "A\n", "init a");
+      await h.bare.addCommitPush("commands/b.md", "B\n", "init b");
+      const { repo } = await h.repoService.register({
+        git_url: h.bare.url,
+        kind: "open-source"
+      });
+      const project = h.projectService.register({ path: h.projectDir.path });
+      const skillA = h.repoService
+        .listSkills(repo.id)
+        .find((s) => s.name === "a")!;
+      const skillB = h.repoService
+        .listSkills(repo.id)
+        .find((s) => s.name === "b")!;
+      h.subscriptionService.subscribe(project.id, "a");
+      h.subscriptionService.subscribe(project.id, "b");
+
+      const isClean = vi.fn().mockResolvedValue(false);
+      const remoteHead = vi
+        .fn()
+        .mockResolvedValue("abcdef0123456789abcdef0123456789abcdef01");
+      const resetHard = vi.fn().mockResolvedValue(undefined);
+      // Pull must be real-ish so the subsequent readRepoHead + file-copy
+      // path still works — delegate to the real gitPull here.
+      const { gitPull } = await import("../src/git.js");
+      const pull = vi.fn(gitPull);
+      const commitAndPush = vi.fn().mockResolvedValue("deadbeef");
+
+      const sync = makeSyncWithMock({
+        pull,
+        commitAndPush,
+        isClean,
+        remoteHead,
+        resetHard
+      });
+
+      const repoPulled = new Set<number>();
+      await sync.pullOne(project.id, skillA.id, { repoPulled });
+      await sync.pullOne(project.id, skillB.id, { repoPulled });
+
+      expect(isClean).toHaveBeenCalledTimes(1);
+      expect(resetHard).toHaveBeenCalledTimes(1);
+      expect(pull).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ---------- resolveBatch outcome error_code / error_detail (v0.6) ----------
+
+  describe("resolveBatch outcomes (v0.6)", () => {
+    function makeSyncWithMock(
+      gitImpl: NonNullable<SyncServiceDeps["gitImpl"]>
+    ): SyncService {
+      return new SyncService({
+        db: h.db,
+        events: h.events,
+        logger: nullLogger(),
+        locks: h.locks,
+        projects: h.projectService,
+        subscriptions: h.subscriptionService,
+        gitAuthor: { name: "Test", email: "test@example.com" },
+        gitImpl
+      });
+    }
+
+    /**
+     * Drives two skills (in the same repo) into genuine Conflict state —
+     * identical pattern to the `describe("resolve")` buildConflict() helper,
+     * but for a pair of skills so resolveBatch has > 1 outcome to iterate.
+     */
+    async function buildPairConflict(): Promise<{
+      project: { id: number; path: string };
+      skillAId: number;
+      skillBId: number;
+    }> {
+      await h.bare.addCommitPush("commands/a.md", "v1 a\n", "init-a");
+      await h.bare.addCommitPush("commands/b.md", "v1 b\n", "init-b");
+      const { repo } = await h.repoService.register({ git_url: h.bare.url });
+      const project = h.projectService.register({ path: h.projectDir.path });
+      const skills = h.repoService.listSkills(repo.id);
+      const skillA = skills.find((s) => s.name === "a")!;
+      const skillB = skills.find((s) => s.name === "b")!;
+      h.subscriptionService.subscribe(project.id, "a");
+      h.subscriptionService.subscribe(project.id, "b");
+
+      // Materialize both.
+      await h.syncService.pullOne(project.id, skillA.id);
+      await h.syncService.pullOne(project.id, skillB.id);
+
+      // Drift: local + remote diverge on both files.
+      writeWorking(project.path, "commands/a.md", "local a\n");
+      writeWorking(project.path, "commands/b.md", "local b\n");
+      await h.bare.addCommitPush("commands/a.md", "remote a\n", "remote-a");
+      await h.bare.addCommitPush("commands/b.md", "remote b\n", "remote-b");
+
+      // One failed pull per skill records CONFLICT_DETECTED in sync_logs,
+      // which is what `computeState` needs to classify the row as Conflict.
+      await expect(
+        h.syncService.pullOne(project.id, skillA.id)
+      ).rejects.toBeDefined();
+      await expect(
+        h.syncService.pullOne(project.id, skillB.id)
+      ).rejects.toBeDefined();
+
+      return {
+        project: { id: project.id, path: project.path },
+        skillAId: skillA.id,
+        skillBId: skillB.id
+      };
+    }
+
+    it("per-skill outcome carries error_code + error_detail from AstackError", async () => {
+      const { project, skillAId, skillBId } = await buildPairConflict();
+
+      // Now inject a gitImpl that fails `pull` (inside resolve after
+      // ensureMirrorClean) with a known AstackError carrying git_stderr.
+      const pull = vi.fn().mockRejectedValue(
+        new AstackError(
+          ErrorCode.REPO_GIT_FAILED,
+          "git pull failed",
+          {
+            git_stderr:
+              "Your local changes would be overwritten by merge: commands/a.md",
+            local_path: "/tmp/fake"
+          }
+        )
+      );
+      // isClean=true keeps ensureMirrorClean as a no-op so the AstackError
+      // clearly comes from the pull step (not the reset step).
+      const isClean = vi.fn().mockResolvedValue(true);
+
+      const sync = makeSyncWithMock({ pull, isClean });
+      const out = await sync.resolveBatch(
+        project.id,
+        [skillAId, skillBId],
+        ResolveStrategy.UseRemote
+      );
+
+      expect(out.errors).toBe(2);
+      expect(out.resolved).toBe(0);
+      expect(out.outcomes).toHaveLength(2);
+      for (const oc of out.outcomes) {
+        expect(oc.success).toBe(false);
+        expect(oc.error).toBe("git pull failed");
+        expect(oc.error_code).toBe(ErrorCode.REPO_GIT_FAILED);
+        expect(oc.error_detail).toContain(
+          "Your local changes would be overwritten by merge"
+        );
+      }
+    });
+
+    it("non-AstackError failure: outcome has error but error_code/error_detail are undefined", async () => {
+      const { project, skillAId } = await buildPairConflict();
+
+      // A plain Error (not AstackError) — writer must fall back to
+      // error: msg with both error_code and error_detail undefined.
+      const pull = vi.fn().mockRejectedValue(new Error("network unreachable"));
+      const isClean = vi.fn().mockResolvedValue(true);
+
+      const sync = makeSyncWithMock({ pull, isClean });
+      const out = await sync.resolveBatch(
+        project.id,
+        [skillAId],
+        ResolveStrategy.UseRemote
+      );
+
+      expect(out.errors).toBe(1);
+      expect(out.outcomes).toHaveLength(1);
+      const oc = out.outcomes[0]!;
+      expect(oc.success).toBe(false);
+      expect(oc.error).toBe("network unreachable");
+      expect(oc.error_code).toBeUndefined();
+      expect(oc.error_detail).toBeUndefined();
     });
   });
 });

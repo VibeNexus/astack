@@ -45,6 +45,7 @@ import { SyncHistoryPanel } from "../components/project/SyncHistoryPanel.js";
 import { SyncResultCard } from "../components/project/SyncResultCard.js";
 import { Skeleton, TabPanel, Tabs, type TabItem } from "../components/ui/index.js";
 import { api, AstackError } from "../lib/api.js";
+import { formatBatchResolveFailureDetail } from "../lib/formatBatchResolveFailure.js";
 import { useToast } from "../lib/toast.js";
 import { useEventListener } from "../lib/sse.js";
 import { useProjectActions } from "../lib/useProjectActions.js";
@@ -372,13 +373,16 @@ export function ProjectDetailPage(): React.JSX.Element {
             try {
               const result = await api.resolveBatch(projectId, {
                 skill_ids: skillIds,
-                strategy: "use-remote"
+                strategy: "use-remote",
+                manual_done: false
               });
               await load();
               if (result.errors > 0) {
+                // v0.6: surface the first 3 per-skill error details so the
+                // user can see root-causes instead of just "N failed".
                 toast.warn(
                   `Resolved ${result.resolved}, ${result.errors} failed`,
-                  "Some skills could not be resolved — check individually."
+                  formatBatchResolveFailureDetail(result.outcomes)
                 );
               } else {
                 toast.ok(

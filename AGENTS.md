@@ -30,9 +30,11 @@
 
 ## 5. 当前活跃迭代
 
+**最近完成：** v0.6 — Open-source 镜像卫生 + Resolve 路径自愈 + 日志落盘（2026-04-22，[spec](docs/version/v0.6-mirror-hygiene.md)）— PR1–PR5 全部落地，R6/R7/P6/P7 已沉淀至 retro
+
 **主路径实施完成：** v0.5 — Subscription Bootstrap for Legacy Projects（2026-04-21，[spec](docs/version/v0.5-subscription-bootstrap.md)）— PR1–PR5 已落地，PR6 E2E 规划中
 
-**最近完成：** v0.4 — Harness Tab + 系统级 Skill 首次落地（2026-04-20，[spec](docs/version/v0.4-harness-tab.md)）
+**历史完成：** v0.4 — Harness Tab + 系统级 Skill 首次落地（2026-04-20，[spec](docs/version/v0.4-harness-tab.md)）
 
 ## 6. gstack
 

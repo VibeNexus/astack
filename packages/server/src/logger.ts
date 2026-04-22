@@ -40,20 +40,30 @@ function format(level: LogLevel, event: string, fields?: Record<string, unknown>
 }
 
 /**
- * Create a logger writing to the given stream (default: stderr).
+ * Create a logger writing to the given stream (or streams).
  *
  * Stderr is the right choice for daemon logs — stdout is reserved for
  * structured output (e.g. `astack-server status --json`).
+ *
+ * v0.6: accepts an array of streams so the daemon can tee `process.stderr`
+ * and a `fs.createWriteStream(config.logFile, {flags:'a'})` in one logger
+ * instance without a separate decorator function.
  */
 export function createLogger(
   minLevel: LogLevel = "info",
-  stream: NodeJS.WritableStream = process.stderr
+  stream:
+    | NodeJS.WritableStream
+    | NodeJS.WritableStream[] = process.stderr
 ): Logger {
   const min = LEVEL_ORDER[minLevel];
+  const streams = Array.isArray(stream) ? stream : [stream];
 
   function log(level: LogLevel, event: string, fields?: Record<string, unknown>): void {
     if (LEVEL_ORDER[level] < min) return;
-    stream.write(format(level, event, fields) + "\n");
+    const line = format(level, event, fields) + "\n";
+    for (const s of streams) {
+      s.write(line);
+    }
   }
 
   return {

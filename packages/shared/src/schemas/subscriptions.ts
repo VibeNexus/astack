@@ -217,7 +217,20 @@ export const BatchResolveResponseSchema = z.object({
     z.object({
       skill_id: IdSchema,
       success: z.boolean(),
-      error: z.string().optional()
+      error: z.string().optional(),
+      /**
+       * Machine-readable error code when the outcome failed with an
+       * AstackError (e.g. "REPO_GIT_FAILED"). Undefined for non-AstackError
+       * failures or successes. v0.6+.
+       */
+      error_code: z.string().optional(),
+      /**
+       * Human-readable error detail — typically the underlying tool's stderr
+       * fragment (e.g. git_stderr from AstackError.details). Surfaced so
+       * bulk/batch responses don't collapse multiple root-causes into a
+       * single `"N failed"` count. v0.6+.
+       */
+      error_detail: z.string().optional()
     })
   )
 });

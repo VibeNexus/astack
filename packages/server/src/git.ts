@@ -134,6 +134,31 @@ export async function gitIsClean(localPath: string): Promise<boolean> {
 }
 
 /**
+ * Hard-reset the working tree + index of `localPath` to the given ref
+ * (e.g. `"origin/HEAD"`). Used by the open-source mirror self-heal path
+ * (v0.6 `SyncService.ensureMirrorClean`) to discard any hand-edits that
+ * would otherwise block `git pull --ff-only`.
+ *
+ * Destructive by design. Callers MUST gate on `gitIsClean() === false`
+ * AND repo kind (only open-source mirrors are valid recipients) before
+ * invoking. See v0.6 spec §A1 for why custom repos are excluded.
+ */
+export async function gitResetHard(
+  localPath: string,
+  ref: string
+): Promise<void> {
+  try {
+    const git = simpleGit(localPath);
+    await git.raw(["reset", "--hard", ref]);
+  } catch (err) {
+    throw wrapGitError(err, "git reset --hard failed", {
+      local_path: localPath,
+      ref
+    });
+  }
+}
+
+/**
  * Attach a standard SimpleGit instance for advanced callers (e.g. log diff).
  * Rare — most code should use the typed helpers above.
  */

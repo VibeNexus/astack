@@ -38,6 +38,7 @@ import {
   AstackError,
   ErrorCode,
   EventType,
+  RepoKind,
   ResolveStrategy,
   type ResolveStrategy as ResolveStrategyT,
   SubscriptionState,
@@ -63,7 +64,14 @@ import {
   isFile,
   mirrorDir
 } from "../fs-util.js";
-import { gitCommitAndPush, gitGetHead, gitPull } from "../git.js";
+import {
+  gitCommitAndPush,
+  gitGetHead,
+  gitIsClean,
+  gitPull,
+  gitRemoteHead,
+  gitResetHard
+} from "../git.js";
 import { projectBootstrapLockKey, type LockManager } from "../lock.js";
 import type { Logger } from "../logger.js";
 
@@ -87,6 +95,15 @@ export interface SyncServiceDeps {
       msg: string,
       author: { name: string; email: string }
     ): Promise<string>;
+    /**
+     * v0.6 open-source mirror self-heal surface. Both methods are
+     * optional so pre-v0.6 test doubles that only provide `pull` /
+     * `commitAndPush` keep working; `ensureMirrorClean` is gated on
+     * `RepoKind.OpenSource` AND on `isClean` being defined.
+     */
+    isClean?(localPath: string): Promise<boolean>;
+    remoteHead?(localPath: string): Promise<string>;
+    resetHard?(localPath: string, ref: string): Promise<void>;
   };
   /** For building conflict-resolve URL in events. */
   resolveUrl?: (projectId: number, skillId: number) => string;
@@ -129,7 +146,10 @@ export class SyncService {
     this.git =
       deps.gitImpl ?? {
         pull: gitPull,
-        commitAndPush: gitCommitAndPush
+        commitAndPush: gitCommitAndPush,
+        isClean: gitIsClean,
+        remoteHead: gitRemoteHead,
+        resetHard: gitResetHard
       };
     this.now = deps.now ?? (() => new Date());
   }
@@ -171,9 +191,15 @@ export class SyncService {
       // we keep it as a parameter for API parity but currently always pull.
       void opts.force;
       // Skip git pull if this repo was already refreshed in this batch
-      // (repoPulled tracks repo ids, not skill ids).
+      // (repoPulled tracks repo ids, not skill ids). The `ensureMirrorClean`
+      // call is similarly batch-scoped: the first pullOne for a given repo
+      // in a batch pays the self-heal cost; subsequent pullOne calls for
+      // skills in the same repo reuse the already-clean tree (see v0.6 spec
+      // §3.1 — `repoPulled` Set guarantees one `ensureMirrorClean + git.pull`
+      // pair per repo per batch).
       const alreadyPulled = opts.repoPulled?.has(repo.id) ?? false;
       if (!alreadyPulled) {
+        await this.ensureMirrorClean(repo);
         await this.git.pull(repo.local_path);
         opts.repoPulled?.add(repo.id);
       }
@@ -667,6 +693,10 @@ export class SyncService {
       }
 
       // Refresh before resolving to have the newest upstream.
+      // v0.6: self-heal dirty open-source mirrors first so `git.pull`
+      // doesn't crash with "Your local changes would be overwritten by
+      // merge" and silently block every conflict resolution (spec §0).
+      await this.ensureMirrorClean(repo);
       await this.git.pull(repo.local_path);
 
       if (strategy === ResolveStrategy.UseRemote) {
@@ -741,12 +771,20 @@ export class SyncService {
       skill_id: number;
       success: boolean;
       error?: string;
+      error_code?: string;
+      error_detail?: string;
     }>;
   }> {
     let resolved = 0;
     let skipped = 0;
     let errors = 0;
-    const outcomes: Array<{ skill_id: number; success: boolean; error?: string }> = [];
+    const outcomes: Array<{
+      skill_id: number;
+      success: boolean;
+      error?: string;
+      error_code?: string;
+      error_detail?: string;
+    }> = [];
 
     for (const skillId of skillIds) {
       try {
@@ -760,12 +798,26 @@ export class SyncService {
         } else {
           errors++;
           const msg = err instanceof Error ? err.message : String(err);
+          const errorCode = err instanceof AstackError ? err.code : undefined;
+          const errorDetail =
+            err instanceof AstackError
+              ? typeof err.details?.git_stderr === "string"
+                ? (err.details.git_stderr as string)
+                : undefined
+              : undefined;
           this.deps.logger.warn("resolve_batch.skill_failed", {
             project_id: projectId,
             skill_id: skillId,
-            error: msg
+            error: msg,
+            error_code: errorCode
           });
-          outcomes.push({ skill_id: skillId, success: false, error: msg });
+          outcomes.push({
+            skill_id: skillId,
+            success: false,
+            error: msg,
+            error_code: errorCode,
+            error_detail: errorDetail
+          });
         }
       }
     }
@@ -1129,6 +1181,62 @@ export class SyncService {
     } catch {
       return repo.head_hash ?? "";
     }
+  }
+
+  /**
+   * v0.6: ensure an open-source mirror's working tree is clean before we
+   * hand it to `git.pull`. If a hand-edit / external script left dirty
+   * files in `~/.astack/repos/<name>/`, `git pull --ff-only` fails with
+   * "Your local changes would be overwritten by merge" and blocks every
+   * downstream resolve / pullOne silently (see §0).
+   *
+   * Policy (spec §A1):
+   *   - `kind !== OpenSource`                → early return (custom repos
+   *     legitimately have dirty state during push-flow intermediates)
+   *   - `git.isClean` test-double missing    → early return (pre-v0.6 DI
+   *     surface, treated as opt-in)
+   *   - `isClean() === true`                 → no-op
+   *   - `isClean() === false`                → `remoteHead` probe +
+   *     `resetHard("origin/HEAD")` + warn log + `RepoMirrorReset` SSE
+   *   - `isClean` / `remoteHead` / `resetHard` throws → bubble (never
+   *     swallow a real git failure behind a silent heal attempt, P1-2)
+   */
+  private async ensureMirrorClean(repo: SkillRepo): Promise<void> {
+    if (repo.kind !== RepoKind.OpenSource) return;
+    if (!repo.local_path) return;
+    // Test doubles that pre-date v0.6 may not provide isClean; treat as
+    // "opt-out of auto-heal" for backward compatibility.
+    if (!this.git.isClean || !this.git.remoteHead || !this.git.resetHard) {
+      return;
+    }
+
+    // `isClean` throwing (e.g. `.git` missing, permission errors) is
+    // surfaced as REPO_GIT_FAILED upstream; we do NOT paper over that
+    // with a reset — the failure is the point.
+    const clean = await this.git.isClean(repo.local_path);
+    if (clean) return;
+
+    // Probe remote HEAD first so fresh clones (or users who deleted
+    // `.git/refs/remotes/origin/HEAD`) fail with a specific git_stderr
+    // instead of an ambiguous reset error. See spec §A4.
+    await this.git.remoteHead(repo.local_path);
+    await this.git.resetHard(repo.local_path, "origin/HEAD");
+
+    this.deps.logger.warn("sync.mirror_reset", {
+      repo_id: repo.id,
+      repo_name: repo.name,
+      repo_kind: repo.kind,
+      reason: "dirty_working_tree"
+    });
+    this.deps.events.emit({
+      type: EventType.RepoMirrorReset,
+      payload: {
+        repo_id: repo.id,
+        repo_name: repo.name,
+        repo_kind: "open-source",
+        reason: "dirty_working_tree"
+      }
+    });
   }
 
   private buildResolveUrl(projectId: number, skillId: number): string {
