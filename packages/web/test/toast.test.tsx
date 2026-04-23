@@ -35,7 +35,8 @@ describe("ToastProvider", () => {
     vi.useRealTimers();
   });
 
-  it("error toasts stay until clicked", async () => {
+  it("error toasts auto-dismiss after 10s", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let api!: ReturnType<typeof useToast>;
     render(
       <ToastProvider>
@@ -46,8 +47,44 @@ describe("ToastProvider", () => {
     expect(screen.getByText("Boom")).toBeInTheDocument();
     expect(screen.getByText("details")).toBeInTheDocument();
 
-    // Wait 100ms real-time to ensure no auto-dismiss fires.
-    await new Promise((r) => setTimeout(r, 100));
+    // Still visible at 3s (ok/warn dismiss window) — errors get a longer fuse.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_001);
+    });
+    expect(screen.getByText("Boom")).toBeInTheDocument();
+
+    // Gone after 10s total.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_100);
+    });
+    expect(screen.queryByText("Boom")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("error toasts can be dismissed via the close button", async () => {
+    let api!: ReturnType<typeof useToast>;
+    render(
+      <ToastProvider>
+        <TestHarness onReady={(a) => (api = a)} />
+      </ToastProvider>
+    );
+    act(() => api.error("Boom", "details"));
+    expect(screen.getByText("Boom")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    await waitFor(() => {
+      expect(screen.queryByText("Boom")).not.toBeInTheDocument();
+    });
+  });
+
+  it("error toasts can still be dismissed by clicking the body", async () => {
+    let api!: ReturnType<typeof useToast>;
+    render(
+      <ToastProvider>
+        <TestHarness onReady={(a) => (api = a)} />
+      </ToastProvider>
+    );
+    act(() => api.error("Boom"));
     expect(screen.getByText("Boom")).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Boom"));
