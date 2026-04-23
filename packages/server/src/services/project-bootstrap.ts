@@ -212,10 +212,65 @@ export class ProjectBootstrapService {
       projectBootstrapLockKey(projectId),
       async () => {
         const result = await this.scanWithDedup(projectId);
+
+        // v0.8: snapshot which `matched` entries correspond to an
+        // existing `origin='auto'` LocalSkill BEFORE we subscribe —
+        // those rows need to flip to `status='name_collision'` once
+        // the subscription is in place, per spec §A6 (reverse order:
+        // LocalSkill existed first, upstream repo arrived later).
+        //
+        // We don't flip `origin='adopted'` rows here because scanRaw
+        // never classifies them as matched in the first place (the
+        // user explicitly said "this is mine, don't touch it").
+        const localSkills = this.deps.getLocalSkillService?.() ?? null;
+        const autoAdoptedMatchKeys: Array<{ type: SkillType; name: string }> =
+          [];
+        if (localSkills) {
+          try {
+            for (const m of result.matched) {
+              const row = this.localSkills.findByRef(
+                projectId,
+                m.type,
+                m.name
+              );
+              if (row && row.origin === "auto") {
+                autoAdoptedMatchKeys.push({ type: m.type, name: m.name });
+              }
+            }
+          } catch (err) {
+            safeLog(this.deps.logger, "bootstrap.reclassify_probe_failed", {
+              project_id: projectId,
+              error: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
+
         const { subscribed, failed } = this.subscribeMatched(
           projectId,
           result.matched
         );
+
+        // v0.8 continued: for each auto-adopted match that actually
+        // succeeded, flip the LocalSkill to `name_collision` so the UI
+        // exposes the ambiguity (user can unadopt or unsubscribe). We
+        // intersect with the succeeded set so a failed subscribe
+        // doesn't noisily flip a row that's still legitimately local.
+        if (localSkills && autoAdoptedMatchKeys.length > 0) {
+          const succeededKeys = new Set(
+            subscribed.map((s) => `${s.type}/${s.name}`)
+          );
+          const toFlip = autoAdoptedMatchKeys.filter((k) =>
+            succeededKeys.has(`${k.type}/${k.name}`)
+          );
+          try {
+            localSkills.markNameCollisionUnderLock(projectId, toFlip);
+          } catch (err) {
+            safeLog(this.deps.logger, "bootstrap.mark_collision_crash", {
+              project_id: projectId,
+              error: err instanceof Error ? err.message : String(err)
+            });
+          }
+        }
 
         // v0.7 §3.1: auto-adopt unmatched entries as LocalSkills (origin
         // 'auto'). We call this INSIDE the bootstrap lock scope so DB
@@ -230,7 +285,6 @@ export class ProjectBootstrapService {
         // failures are already swallowed into `result.failed[]` by
         // LocalSkillService itself (R4).
         try {
-          const localSkills = this.deps.getLocalSkillService?.() ?? null;
           if (localSkills) {
             const autoAdopted = localSkills.autoAdoptFromUnmatched(
               projectId,
@@ -371,12 +425,23 @@ export class ProjectBootstrapService {
       ).map((e) => `${e.type}/${e.name}`)
     );
     const subscribedKeys = this.collectSubscribedKeys(project.id);
-    // v0.7 §3.1 / §A2: entries already tracked as LocalSkill (adopted or
-    // auto-adopted) must not re-appear in any of matched/ambiguous/
-    // unmatched — the Local Skills tab owns their lifecycle.
+    // v0.7 §3.1 / §A2: entries already tracked as LocalSkill with
+    // `origin='adopted'` (user explicitly said "this is mine") must
+    // never re-appear in matched/ambiguous/unmatched — the Local Skills
+    // tab owns their lifecycle.
+    //
+    // v0.8 fix: `origin='auto'` rows DO participate in classification.
+    // Auto-adopt is a provisional tag — if the user later registers a
+    // repo that provides the same (type, name), we want the scanner to
+    // surface it so `scanAndAutoSubscribe` can subscribe + flip the
+    // LocalSkill row to `name_collision` (spec §A6). The previous
+    // blanket filter made auto-adopted entries permanently invisible
+    // to repo matches, so adding a repo after registration produced
+    // zero UI change (bug: "后续添加仓库不触发变化").
     const adoptedLocalKeys = new Set(
       this.localSkills
         .listByProject(project.id)
+        .filter((r) => r.origin === "adopted")
         .map((r) => `${r.type}/${r.name}`)
     );
 

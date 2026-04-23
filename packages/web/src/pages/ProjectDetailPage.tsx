@@ -129,12 +129,25 @@ export function ProjectDetailPage(): React.JSX.Element {
    * v0.5: refresh the bootstrap result. Runs in parallel with `load`;
    * independent so SSE events that only touch one domain don't force the
    * other to refetch.
+   *
+   * v0.8 bug fix: on page open we call the **write** path
+   * (`scanBootstrap` → `POST /bootstrap/scan`) rather than the pure-read
+   * `inspectBootstrap`. Motivation: users can register a project BEFORE
+   * any repos exist (→ every `.claude/**` entry gets auto-adopted as
+   * `origin='auto'` LocalSkill). Later when they add matching repos,
+   * the previous read-only open left the Subscriptions + Local Skills
+   * views permanently stale because no code path recomputed
+   * classification. `scanAndAutoSubscribe` is idempotent (same inflight
+   * dedup + bootstrap lock guarantees), and the backend now re-classifies
+   * `origin='auto'` rows so this reliably converges the UI to truth.
+   * SSE (`local_skills.changed` + bootstrap events) will also fire and
+   * invalidate the other slices.
    */
   const loadBootstrap = useCallback(async () => {
     if (!Number.isFinite(projectId) || projectId <= 0) return;
     try {
-      const res = await api.inspectBootstrap(projectId);
-      setBootstrap(res);
+      const res = await api.scanBootstrap(projectId);
+      setBootstrap(res.result);
     } catch {
       // Bootstrap endpoint is non-critical for the tab — swallow errors
       // so a transient /bootstrap failure doesn't block the rest of the UI.

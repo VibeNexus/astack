@@ -132,6 +132,35 @@
 
 ---
 
+## 实现类反模式（续 2）
+
+### P8 · "兜底决策的永久化" — 系统为一次性兜底插入的标记被当作前置过滤的永久屏蔽
+
+**现象：** 系统在"无更优选项"的瞬间自动打上兜底标记（`origin='auto'` / `source='inferred'` / `confidence='low'` 等），后续代码把这些标记和"用户明示的 ownership 标记"（`origin='adopted'` / `source='user'`）合并成**同一过滤集**，用在 scanner / resolver / 分类器的前置短路里。后来的上游条件变化（新 repo 加入 / 新规则就位）理论上应触发重分类，但过滤器持续屏蔽，兜底标记事实上变成永久决策。
+
+**根因：**
+- Spec 只描述了"兜底的打标 heuristic"（何时打 auto），没描述"兜底的退出 heuristic"（何时允许取消 / 重分类）；研发实现 heuristic 后在下游过滤器里图简单写"所有带这个标记的都跳过"
+- 用户明示（adopt）和系统兜底（auto）被同一张表承载（合理，两者都是"LocalSkill"），但下游过滤器只 grep 表不 grep `origin` 字段
+- 测试覆盖"第一次打标是否幂等"（容易），但不覆盖"上游条件变化后能否翻转"（不容易想到）
+
+**危害：**
+- UX 断层：用户的自然预期是"我新加了 repo 系统自动接管"，但 UI 完全无变化；唯一恢复路径是"手动 unadopt + rescan" —— 用户心智完全断裂
+- 难 debug：问题表现为"UI 应该变但没变"，没有错误日志、没有 SSE 异常、状态表里的行看上去也"正常"（`status='present'`）；排障必须追到 scanner 的过滤源码才能定位
+- 修复时容易连带事故：如果把过滤器去掉会让用户明示的 `adopted` 行也被重分类（违反用户意图），必须按来源分支 —— 即回到 R8 的纪律
+
+**案例：**
+- v0.8 修复的 `ProjectBootstrapService.scanRaw`：v0.7 把 `origin='adopted'` 和 `origin='auto'` 的 LocalSkill 一起塞进 `adoptedLocalKeys` 作前置过滤；用户 2026-04-23 先注册空项目（所有 `.claude/commands/*.md` 被 auto-adopt）→ 后注册提供同名 command 的 repo → 打开项目页 Subscriptions 列表和 LocalSkill status 都不动（`matched` 集合永远为空）。兜底的 `origin='auto'` 标记永久化成了 "local ownership"
+
+**正向参考：** v0.8 的修法模板：
+1. 领域模型在兜底路径和明示路径**必须有独立枚举值**（`origin: 'adopted' | 'auto'`），不要用 boolean 或合并字段
+2. 前置过滤器按 `origin` 分支，只过滤 `'adopted'`（明示）；`'auto'`（兜底）允许参与后续分类
+3. 下游触发点（在本例是 `scanAndAutoSubscribe`）在 subscribe 成功后显式翻兜底标记的 status（`present` → `name_collision`），让用户看到兜底已失效 + 有更优来源 —— 由用户决定是保留 local 还是退订
+4. 测试必须覆盖"上游条件变化后兜底能翻转"的场景（v0.8 test 7 / 8 的正反例模板）
+
+**关联黄金法则：** R8
+
+---
+
 ## 流程类反模式（续）
 
 ### P7 · "文档声称有但代码没落地" — 配置字段 / 命令 / 扩展点在代码里悬空

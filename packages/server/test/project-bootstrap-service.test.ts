@@ -793,8 +793,14 @@ describe("ProjectBootstrapService — v0.7 LocalSkill integration (PR4)", () => 
 
   it("PR4 test 3: auto-adopt on second scan is idempotent (already-adopted entries re-filtered out of unmatched)", async () => {
     // Run scanAndAutoSubscribe twice. Second run must NOT re-adopt
-    // (adoptedLocalKeys filter prevents re-entry into unmatched) and
-    // must NOT churn last_seen_at in a way that breaks idempotency.
+    // (autoAdoptFromUnmatched skips rows already present in local_skills)
+    // and must NOT churn last_seen_at in a way that breaks idempotency.
+    //
+    // v0.8 note: scanRaw now lets `origin='auto'` rows back into
+    // unmatched/matched so repos registered AFTER an auto-adopt can
+    // reclassify the row. Idempotency is preserved one layer in:
+    // autoAdoptFromUnmatched filters entries that already exist in
+    // local_skills, so second-call upserts are suppressed.
     ctx = await makeCtx();
     makeLocalCommandFile(ctx, "dev");
 
@@ -803,8 +809,9 @@ describe("ProjectBootstrapService — v0.7 LocalSkill integration (PR4)", () => 
     expect(first).toHaveLength(1);
     const firstRow = first[0]!;
 
-    // Second call — scan sees 0 unmatched (filter kicks in), so
-    // autoAdoptFromUnmatched receives an empty list and no upsert runs.
+    // Second call — scanRaw reports unmatched=[dev] again (since there is
+    // still no matching repo), but autoAdoptFromUnmatched's existing-row
+    // filter keeps the DB row untouched.
     await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
     const second = ctx.localSkills.list(ctx.projectId);
     expect(second).toHaveLength(1);
@@ -887,5 +894,135 @@ describe("ProjectBootstrapService — v0.7 LocalSkill integration (PR4)", () => 
     if (localChanged[0]!.type === EventType.LocalSkillsChanged) {
       expect(localChanged[0]!.payload.summary.added).toBe(3);
     }
+  });
+
+  it("v0.8 test 7: auto-adopted row is reclassified + name_collision when matching repo registered later", async () => {
+    // Reproduces the bug reported 2026-04-23: user registers a project
+    // with local `.claude/commands/dev.md`, scanAndAutoSubscribe adopts
+    // it as origin='auto'. User later registers a repo that provides
+    // command/dev. A subsequent scanAndAutoSubscribe MUST:
+    //   1. classify `dev` as `matched` (origin='auto' rows no longer
+    //      short-circuit out of scanRaw)
+    //   2. subscribe to repoA/command/dev
+    //   3. flip the LocalSkill row to status='name_collision'
+    //      (spec §A6, reverse order) — origin stays 'auto'.
+    ctx = await makeCtx();
+    makeLocalCommandFile(ctx, "dev");
+
+    await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    const firstLocal = ctx.localSkills.list(ctx.projectId);
+    expect(firstLocal).toHaveLength(1);
+    expect(firstLocal[0]!.origin).toBe("auto");
+    expect(firstLocal[0]!.status).toBe("present");
+
+    // Simulate the user adding a repo that provides command/dev AFTER
+    // the initial bootstrap.
+    insertRepoSkill(ctx, {
+      repoName: "repoA",
+      type: SkillType.Command,
+      name: "dev"
+    });
+
+    const r2 = await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    expect(r2.subscribed).toHaveLength(1);
+    expect(r2.subscribed[0]!.name).toBe("dev");
+
+    // LocalSkill row is preserved and flipped to name_collision.
+    const secondLocal = ctx.localSkills.list(ctx.projectId);
+    expect(secondLocal).toHaveLength(1);
+    expect(secondLocal[0]!.id).toBe(firstLocal[0]!.id);
+    expect(secondLocal[0]!.origin).toBe("auto");
+    expect(secondLocal[0]!.status).toBe("name_collision");
+  });
+
+  it("v0.8 test 8: origin='adopted' rows are NOT reclassified even if a repo later matches", async () => {
+    // Contract inverse of test 7: users who explicitly adopted a skill
+    // (origin='adopted') have signalled "this is mine, don't treat it
+    // as a repo subscription candidate". Adding a matching repo later
+    // must NOT auto-subscribe on their behalf.
+    ctx = await makeCtx();
+    makeLocalCommandFile(ctx, "dev");
+
+    // User manually adopts `dev` (origin='adopted').
+    const adopt = await ctx.localSkills.adopt(ctx.projectId, [
+      { type: SkillType.Command, name: "dev" }
+    ]);
+    expect(adopt.succeeded).toHaveLength(1);
+    expect(adopt.succeeded[0]!.origin).toBe("adopted");
+
+    // Now a repo providing command/dev is registered.
+    insertRepoSkill(ctx, {
+      repoName: "repoA",
+      type: SkillType.Command,
+      name: "dev"
+    });
+
+    const r = await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    // No subscribe happened — adopted rows short-circuit scanRaw.
+    expect(r.subscribed).toHaveLength(0);
+
+    const rows = ctx.localSkills.list(ctx.projectId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.origin).toBe("adopted");
+    // Status stays 'present' — user owns this, no collision marker.
+    expect(rows[0]!.status).toBe("present");
+  });
+
+  it("v0.8 test 7b: markNameCollisionUnderLock only flips auto-adopted matches, not every subscribed entry", async () => {
+    // Guards the intersection algorithm in
+    // scanAndAutoSubscribe: `autoAdoptedMatchKeys ∩ succeededKeys`.
+    // Scenario — at second scan, two entries reach `matched`:
+    //   - `command/dev` → had a pre-existing LocalSkill row with
+    //     origin='auto' (auto-adopted before repoA existed). MUST flip
+    //     to name_collision after subscribe succeeds.
+    //   - `command/release` → no pre-existing LocalSkill row (repoB
+    //     already exists at time of the second scan's first look; but
+    //     since local file is only created here and we scan once, it
+    //     goes straight to matched). MUST NOT produce a LocalSkill row
+    //     and MUST NOT fabricate a name_collision flip.
+    ctx = await makeCtx();
+    makeLocalCommandFile(ctx, "dev");
+
+    // Phase 1 — no repos yet, auto-adopt dev as origin='auto'.
+    await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+    const phase1 = ctx.localSkills.list(ctx.projectId);
+    expect(phase1).toHaveLength(1);
+    expect(phase1[0]!.name).toBe("dev");
+    expect(phase1[0]!.origin).toBe("auto");
+    expect(phase1[0]!.status).toBe("present");
+    const devRowId = phase1[0]!.id;
+
+    // Phase 2 — register both repos AND add a brand-new local file
+    // `release.md`. The second scan sees both `dev` and `release` in
+    // `matched`, but only `dev` is in the auto-adopted snapshot.
+    insertRepoSkill(ctx, {
+      repoName: "repoA",
+      type: SkillType.Command,
+      name: "dev"
+    });
+    insertRepoSkill(ctx, {
+      repoName: "repoB",
+      type: SkillType.Command,
+      name: "release"
+    });
+    makeLocalCommandFile(ctx, "release");
+
+    const r = await ctx.bootstrap.scanAndAutoSubscribe(ctx.projectId);
+
+    // Both matched entries were subscribed.
+    expect(r.subscribed).toHaveLength(2);
+    const subscribedNames = r.subscribed.map((s) => s.name).sort();
+    expect(subscribedNames).toEqual(["dev", "release"]);
+
+    // Only the pre-existing auto-adopted row was flipped. `release`
+    // must not have spawned a LocalSkill row (it hit the subscribe
+    // path without ever sitting in `unmatched`).
+    const phase2 = ctx.localSkills.list(ctx.projectId);
+    expect(phase2).toHaveLength(1);
+    const devRow = phase2[0]!;
+    expect(devRow.id).toBe(devRowId);
+    expect(devRow.name).toBe("dev");
+    expect(devRow.origin).toBe("auto");
+    expect(devRow.status).toBe("name_collision");
   });
 });

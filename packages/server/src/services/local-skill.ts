@@ -206,6 +206,56 @@ export class LocalSkillService {
   }
 
   /**
+   * v0.8: Flip matching LocalSkill rows to `status='name_collision'`.
+   *
+   * Called by `ProjectBootstrapService.scanAndAutoSubscribe` after a
+   * reclassify pass subscribes an entry that happens to already exist
+   * as a LocalSkill (typically `origin='auto'` from an earlier bootstrap
+   * that ran before the upstream repo was registered). Implements the
+   * §A6 contract "LocalSkillService.upsert … 若 (project_id, type, name)
+   * 已存在订阅，status 置 name_collision" but for the reverse order
+   * (LocalSkill existed first, subscription arrived later).
+   *
+   * Caller MUST already hold `projectBootstrapLockKey(projectId)` — this
+   * is a no-lock helper, the inverse double-acquire constraint that
+   * `autoAdoptFromUnmatched` has.
+   *
+   * Emits `local_skills.changed` when at least one row flipped so the
+   * UI refreshes; no event when the refs list is effectively a no-op.
+   */
+  markNameCollisionUnderLock(
+    projectId: Id,
+    refs: LocalSkillRef[]
+  ): number {
+    if (refs.length === 0) return 0;
+    const now = new Date().toISOString();
+    let flipped = 0;
+    for (const ref of refs) {
+      const row = this.repo.findByRef(projectId, ref.type, ref.name);
+      if (!row) continue;
+      if (row.status === "name_collision") continue;
+      this.repo.updateStatus(row.id, {
+        status: "name_collision",
+        content_hash: row.content_hash,
+        last_seen_at: now
+      });
+      flipped += 1;
+    }
+    if (flipped > 0) {
+      // Use the "modified" bucket loosely as "a row transitioned"; the
+      // web client re-fetches the full list on any changed event so the
+      // exact bucket doesn't affect correctness, only future telemetry.
+      this.emitChanged(projectId, {
+        added: 0,
+        removed: 0,
+        modified: flipped,
+        missing: 0
+      });
+    }
+    return flipped;
+  }
+
+  /**
    * Batch unadopt. Always deletes DB rows; if `delete_files` is true,
    * also removes the backing file/directory from disk.
    */

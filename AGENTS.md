@@ -30,9 +30,10 @@
 
 ## 5. 当前活跃迭代
 
-**最近完成：** v0.7 — Local Skills as First-Class Citizens（2026-04-23，[spec](docs/version/v0.7-local-skills.md)）— PR1–PR6 全部落地，LocalSkill 作为一等公民域概念上线；UnmatchedBanner 常驻 / auto-adopt 仅 bootstrap 触发 / jsdom 测试坑已沉淀 retro
+**最近完成：** v0.8 — Auto-adopt Reflow（2026-04-23，[spec](docs/version/v0.8-bootstrap-reflow.md)）— 修复"先注册项目→后加 repo→UI 不更新"的闭环 bug：`origin='auto'` LocalSkill 允许被 scanRaw 重分类，subscribe 成功后翻 `name_collision`；前端 `loadBootstrap` 切到幂等写；R8 / P8 沉淀至 retro
 
 **历史完成：**
+- v0.7 — Local Skills as First-Class Citizens（2026-04-23，[spec](docs/version/v0.7-local-skills.md)）— PR1–PR6 全部落地，LocalSkill 作为一等公民域概念上线；UnmatchedBanner 常驻 / auto-adopt 仅 bootstrap 触发 / jsdom 测试坑已沉淀 retro
 - v0.6 — Open-source 镜像卫生 + Resolve 路径自愈 + 日志落盘（2026-04-22，[spec](docs/version/v0.6-mirror-hygiene.md)）— PR1–PR5 全部落地，R6/R7/P6/P7 已沉淀至 retro
 - v0.5 — Subscription Bootstrap for Legacy Projects（2026-04-21，[spec](docs/version/v0.5-subscription-bootstrap.md)）— PR1–PR5 已落地，PR6 E2E 规划中
 - v0.4 — Harness Tab + 系统级 Skill 首次落地（2026-04-20，[spec](docs/version/v0.4-harness-tab.md)）

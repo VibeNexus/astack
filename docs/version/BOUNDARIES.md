@@ -3,6 +3,25 @@
 > 每个迭代的范围边界，防止跨迭代的范围蔓延。由 `/spec` 命令自动维护。
 > spec_review 评审时作为迭代边界遵守（A3）的评审基准。
 
+## v0.8 — Auto-adopt Reflow（后加 repo 能重分类已兜底 LocalSkill）
+
+**本迭代做：**
+- `ProjectBootstrapService.scanRaw` 的 `adoptedLocalKeys` 过滤缩紧为仅 `origin='adopted'`；`origin='auto'` 的 LocalSkill 行允许重新参与 `matched / ambiguous / unmatched` 三元分类
+- `ProjectBootstrapService.scanAndAutoSubscribe` 在持 `projectBootstrapLockKey` 锁内追加 snapshot + flip 流程：subscribe 成功后把对应 `origin='auto'` LocalSkill 行翻 `status='name_collision'`（§A6 反方向契约）
+- `LocalSkillService.markNameCollisionUnderLock(projectId, refs)` 新方法，与 `autoAdoptFromUnmatched` 对称的无锁下游接口；翻转数 > 0 时 emit 一次 `local_skills.changed`
+- `ProjectDetailPage.loadBootstrap` 从 `api.inspectBootstrap`（纯读）切到 `api.scanBootstrap`（幂等写），每次打开项目页自动触发重分类收敛
+- 测试：更新 PR4 test 3 注释；新增 v0.8 test 7（auto → 后加 repo → subscribe + name_collision）+ v0.8 test 8（adopted 后加 repo 不翻转）
+- retro 沉淀 R8（兜底标记不应被当作永久 ownership）+ P8（兜底决策的永久化）
+
+**本迭代不做（延后到 v0.9+）：**
+- name_collision 的用户裁决 UI（一键 unadopt / 退订）
+- `origin='auto'` 匹配成功后自动 unadopt（决策：保留让用户决定）
+- 反向修复已订阅 skill 被 adopt 后的顺序一致性（§A6 正方向已覆盖，未见盲区再加）
+- Daemon 启动时对所有项目 re-run scanAndAutoSubscribe
+- 非 `.claude` primary_tool 的 bootstrap 重分类
+- 把 `origin='auto'` LocalSkill 纳入 Subscriptions 面板的 ambiguous 面板
+- CLI 层对 "rescan after new repo" 的命令入口（跟其他 CLI 一致性统一迭代）
+
 ## v0.7 — Local Skills as First-Class Citizens
 
 **本迭代做：**

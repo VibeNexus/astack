@@ -4,6 +4,7 @@
 > spec_review / code_review **仅加载「活跃规则」区域**，归档区域不加载。
 > 活跃规则上限 15 条，超出时应将低频规则移入归档。
 > 编号全局唯一递增（R1, R2, ...），归档后编号不回收。
+> **编号按首次沉淀时间分配；章节分组按规则性质编排** —— 因此文件内不保证"R1 → R2 → …"的行序，读者以 H4 标题为准定位。
 
 ## 活跃规则
 
@@ -54,6 +55,21 @@ Spec 中任何"复用现有 X"的描述（SSE 事件类型、scanner 配置、Se
 - 若改动量大需要切 PR，则**schema 扩展不应独立成 PR**，而应和最大的写入点一起走
 
 **检查点：** PR1 只描述 "schema 加字段" 而不带 rewriteManifest 改造 → 触发警报
+
+---
+
+#### R5 · 代码引用必须 `函数名:行号` 双锚点
+
+> 关联反模式：P5
+
+Spec 中引用现有代码位置（如 "`sync.ts:471` 的 pull"）时，必须同时标注**所在函数名**和**行号**两个锚点；仅行号会在文件内邻近函数间张冠李戴（尤其是 500+ 行的 service 文件，多个 `async fooOne() { await this.git.pull(...) }` 模式会出现在不同函数中）。
+
+**机制：**
+- 写 spec 时对每个行号引用执行两步验证：① 行号对应的语句确实是想引用的调用 ② 该行所在的最近 `async methodName(` 声明与 spec 描述的函数名一致
+- 引用格式统一为 `functionName (file.ts:line)` 而非 `file.ts:line`
+- 批量引用时加一张锚点表（"所有 `git.pull` 调用点：`pullOne (sync.ts:177)` / `pushOne (sync.ts:471)` / `resolve (sync.ts:670)`"）
+
+**反例：** v0.6-mirror-hygiene §1.4 把 `sync.ts:471` 标注为 "`pullBatchUnderLock` 的内层 pull"；实际该行位于 `pushOne` 内部，`pullBatchUnderLock` 通过 `pullOne` 间接 pull。后续 `ensureMirrorClean` 会被插到错误函数，还会为 custom 仓库 push 流程的合法 commit+push 中间态引入误 reset
 
 ---
 
@@ -112,20 +128,21 @@ Spec 中任何"复用现有 X"的描述（SSE 事件类型、scanner 配置、Se
 
 ---
 
-### Spec 设计规则（续）
+### 代码实现规则（续）
 
-#### R5 · 代码引用必须 `函数名:行号` 双锚点
+#### R8 · 兜底标记不应被当作永久 ownership
 
-> 关联反模式：P5
+> 关联反模式：P8
 
-Spec 中引用现有代码位置（如 "`sync.ts:471` 的 pull"）时，必须同时标注**所在函数名**和**行号**两个锚点；仅行号会在文件内邻近函数间张冠李戴（尤其是 500+ 行的 service 文件，多个 `async fooOne() { await this.git.pull(...) }` 模式会出现在不同函数中）。
+任何"系统在无更优选项时自动插入的兜底标记"（命名上常见 `auto` / `default` / `fallback` / `origin='auto'` / `source='inferred'` 等），在被后续代码用作**前置过滤器** / **短路判断** / **防重分类屏障**时，必须显式按标记来源（用户明示 vs 系统兜底）区分处理；不得把用户明示的 ownership 和系统兜底决策合并成同一过滤集。
 
 **机制：**
-- 写 spec 时对每个行号引用执行两步验证：① 行号对应的语句确实是想引用的调用 ② 该行所在的最近 `async methodName(` 声明与 spec 描述的函数名一致
-- 引用格式统一为 `functionName (file.ts:line)` 而非 `file.ts:line`
-- 批量引用时加一张锚点表（"所有 `git.pull` 调用点：`pullOne (sync.ts:177)` / `pushOne (sync.ts:471)` / `resolve (sync.ts:670)`"）
+- 领域模型要有显式的"来源"字段区分用户明示和系统兜底（如 `origin: 'adopted' | 'auto'`、`source: 'user' | 'inferred'`），仅加 boolean 标志不够（`is_local` 丢失触发来源信息）
+- 任何过滤 / 短路逻辑里用到该字段时 grep 所有读取点确认都按来源分支；不要写 "所有 X 都过滤"（等于把兜底永久化）
+- 上游条件变化时兜底标记应允许 / 触发重分类；条件变化的捕获点需要显式写测试（即：新增上游后 scan 必须能翻出原兜底条目）
+- 写 spec 时，每当描述"自动 X"的 heuristic，要同步写"当 heuristic 前提后续不再成立时的行为" —— 否则 heuristic 会隐式永久化
 
-**反例：** v0.6-mirror-hygiene §1.4 把 `sync.ts:471` 标注为 "`pullBatchUnderLock` 的内层 pull"；实际该行位于 `pushOne` 内部，`pullBatchUnderLock` 通过 `pullOne` 间接 pull。后续 `ensureMirrorClean` 会被插到错误函数，还会为 custom 仓库 push 流程的合法 commit+push 中间态引入误 reset
+**反例：** v0.8 前 `ProjectBootstrapService.scanRaw` 的 `adoptedLocalKeys` 过滤集把 `origin='auto'`（系统兜底）和 `origin='adopted'`（用户明示）合并屏蔽 —— 用户先注册空项目触发 auto-adopt，后加匹配 repo 时 `matched` 集合为空，Subscriptions / LocalSkill status 双双静默，UI 无任何变化。v0.8 修为仅 `origin='adopted'` 进过滤集，auto 行重新参与分类；subscribe 成功后翻 `status='name_collision'` 让用户裁决
 
 ---
 
