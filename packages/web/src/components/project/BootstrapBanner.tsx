@@ -7,7 +7,7 @@ import type { BootstrapAmbiguous } from "@astack/shared";
  * v0.5 bootstrap scan found ambiguous local skills (local (type, name)
  * matched by >1 registered repo).
  *
- * v0.6 UX fix (Iteration0.7 feedback): the banner used to say
+ * v0.6 UX fix (v0.7 review feedback): the banner used to say
  *   "1 local skill needs your attention" + [Resolve (1)]
  * which visually collided with per-row `Conflict` + [Resolve] buttons in
  * the subscriptions table — users couldn't tell whether the banner's

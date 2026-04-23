@@ -2,6 +2,8 @@
 
 > 每个迭代的范围边界，防止跨迭代的范围蔓延。由 `/spec` 命令自动维护。
 > spec_review 评审时作为迭代边界遵守（A3）的评审基准。
+>
+> **文件命名规范**：迭代文档统一 slug `v0.X-<kebab-slug>`，spec 正文无后缀，评审用 `_REVIEW.md`，代码评审用 `_CR.md`。详见 [`AGENTS.md §4.1`](../../AGENTS.md#41-docsversion-文件命名规范)。
 
 ## v0.8 — Auto-adopt Reflow（后加 repo 能重分类已兜底 LocalSkill）
 

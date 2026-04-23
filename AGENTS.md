@@ -28,6 +28,24 @@
 | [`docs/retro/golden-rules.md`](docs/retro/golden-rules.md) | 黄金法则（活跃规则） | `/spec_review`、`/code_review` 自动沉淀 |
 | [`docs/retro/patterns.md`](docs/retro/patterns.md) | 反模式库 | 同上 |
 
+### 4.1 `docs/version/` 文件命名规范
+
+所有迭代相关文档统一使用 `v<major>.<minor>-<kebab-slug>` 作为 **slug**，按用途区分后缀：
+
+| 文件类型 | 命名模板 | 举例 | 谁生产 |
+|---------|---------|------|--------|
+| Spec 正文（迭代设计文档，权威） | `v0.X-<slug>.md` | `v0.7-local-skills.md` | `/spec` |
+| Spec 评审记录（sidecar） | `v0.X-<slug>_REVIEW.md` | `v0.7-local-skills_REVIEW.md` | `/spec_review` |
+| 代码评审报告（sidecar） | `v0.X-<slug>_CR.md` | `v0.6-mirror-hygiene_CR.md` | `/code_review` |
+| 其他专项报告 | `v0.X-<slug>_<UPPER_SNAKE>.md`（如 `_SPIKE`、`_POSTMORTEM`） | `v0.2-spike-report.md`（历史遗留，新增统一用后缀式） | 人工或对应命令 |
+
+**规则：**
+
+1. **slug 不变**：同一迭代的 spec / REVIEW / CR 共用同一 slug，`ls v0.X-*.md` 一把捞齐该迭代全部文档。
+2. **sidecar 不进 INDEX 主列**：`INDEX.md` 的主行只链 spec 正文；sidecar 通过 spec 文档内部引用或 INDEX 的状态列内联链接。
+3. **禁止新的风格**：不再使用 `IterationX.Y_PascalSlug_*.md` 之类的风格，历史文件已在 v0.8 / 2026-04-23 统一 rename。
+4. **不在 `docs/version/` 下放非迭代文档**：泛技术笔记走 `docs/<topic>/`，不占 `v0.X` 命名空间。
+
 ## 5. 当前活跃迭代
 
 **最近完成：** v0.8 — Auto-adopt Reflow（2026-04-23，[spec](docs/version/v0.8-bootstrap-reflow.md)）— 修复"先注册项目→后加 repo→UI 不更新"的闭环 bug：`origin='auto'` LocalSkill 允许被 scanRaw 重分类，subscribe 成功后翻 `name_collision`；前端 `loadBootstrap` 切到幂等写；R8 / P8 沉淀至 retro
